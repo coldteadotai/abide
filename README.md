@@ -33,7 +33,7 @@ Your AGENTS.md, CLAUDE.md and the rest of your project instructions are full of 
 
 https://github.com/user-attachments/assets/2d45f6b0-c889-474c-ab4a-8d019fdc7140
 
-Abide enforces exactly those rules. On every edit (or turn) it asks [Jev](https://typesafe.ai), TypeSafe's decision model, one question per rule and gets a probability back. Jev sees the rule and the diff, never the conversation, so edit 200 is checked like edit 1. Break a rule and the agent is told which one and fixes it in the same turn.
+Abide enforces exactly those rules. On every edit (or turn) it asks [Jev](https://typesafe.ai), TypeSafe's decision model, one question per rule and gets a probability back. Jev sees the compiled rule questions, file path(s), diff and, when available, up to 600 characters of the current user prompt. It does not receive the full conversation history, so edit 200 is checked like edit 1. Break a rule and the agent is told which one and fixes it in the same turn.
 
 ![A rule caught and repaired inside a coding session](docs/images/block.svg)
 
@@ -121,7 +121,7 @@ Every file is judged as if it had just been written. You get a table by rule and
 
 ## Cost, privacy, safety
 
-- Changed lines go to TypeSafe under your key, with zero data retention requested on every call, and nowhere else.
+- Compiled rule questions, file path(s), changed lines and, when available, up to 600 characters of the current user prompt go to TypeSafe under your key. The full conversation history is not sent. Zero data retention is requested when routing through Vercel AI Gateway; the direct TypeSafe path does not send that gateway-specific option. Nothing is sent to a Coldtea server.
 - Key lookup order: the environment, then `.env.local` and `.env` at the repo root, then `~/.abide/.env`. Never a flag, never logged. Set `AI_GATEWAY_API_KEY` instead of a TypeSafe key to go through your Vercel AI Gateway.
 - A check on this repo's 13 rules is 1,000 to 1,600 input tokens: $0.00004 to $0.00007, about 300 ms for Jev and about 1 s for the whole hook including Node startup. A turn of 15 edits costs a tenth of a cent. Measured 2026-09-18, direct to TypeSafe. `abide bench` measures yours.
 - The hooks cannot break your session. Every path exits 0, has a hard deadline, and prints only what the host expects.
