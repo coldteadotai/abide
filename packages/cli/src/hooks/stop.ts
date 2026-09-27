@@ -46,6 +46,7 @@ import {
   readFileStarts,
   readPrompt,
   readTurnHead,
+  readTurnRoot,
   recordBlockedDiff,
   stopCheckCount,
   turnDir,
@@ -134,6 +135,9 @@ export const turnDiff = (root: string, dir: string): TurnDiff => {
   if (status === "failed" || status === "pending")
     return incomplete("git could not snapshot the working tree at turn start");
   const baseline = readBaseline(dir);
+  const startRoot = readTurnRoot(dir);
+  if (baseline !== undefined && startRoot !== undefined && startRoot !== root)
+    return incomplete(`the turn started in ${startRoot} and ended in ${root}`);
   if (baseline !== undefined) return gitTurnDiff(root, dir, baseline);
   const deadline = performance.now() + STOP_FALLBACK_DIFF_TIMEOUT_MS;
   const fileDiffs: FileDiff[] = [];

@@ -166,6 +166,25 @@ describe("the Stop check", () => {
     expect(verdicts.calls).toBe(4);
   });
 
+  it("does not diff a turn that started in one worktree and stopped in another", async () => {
+    const root = repoWithUpstream();
+    const other = `${root}-worktree`;
+    sh(root, `git worktree add -q "${other}" upstream`);
+    await startTurn(other);
+    verdicts.next = [{ ruleId: "comment-volume", probability: 0.9, band: "act" }];
+    expect(turnDiff(root, turnDir("s", "p")).kind).toBe("incomplete");
+    expect((await stop(root)).kind).toBe("silent");
+    expect(verdicts.calls).toBe(0);
+  });
+
+  it("still checks a turn that stopped in a subdirectory of the repo it started in", async () => {
+    const root = repoWithUpstream();
+    await startTurn(root);
+    writeFileSync(path.join(root, "mine.ts"), "// says m\nexport const m = 1;\n");
+    verdicts.next = [{ ruleId: "comment-volume", probability: 0.9, band: "act" }];
+    expect((await stop(path.join(root, "src"))).kind).toBe("block");
+  });
+
   it("names only files that still exist, and never blocks a turn that only deleted files", async () => {
     const root = repoWithUpstream();
     await startTurn(root);

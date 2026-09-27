@@ -10,6 +10,7 @@ import {
   writeBaseline,
   writePrompt,
   writeTurnHead,
+  writeTurnRoot,
 } from "../lib/session.js";
 
 /**
@@ -45,6 +46,7 @@ export const handleTurnStart = async (raw: unknown): Promise<HookOutput> => {
     return { kind: "silent" };
   }
   writeBaseline(dir, tree);
+  writeTurnRoot(dir, root);
   if (head !== undefined) writeTurnHead(dir, { commit: head, startedAt });
   markBaseline(dir, "ok");
   return { kind: "silent" };

@@ -201,6 +201,19 @@ export const readTurnHead = (dir: string): TurnHead | undefined => {
   }
 };
 
+/** Worktrees share one object store, so a baseline taken in one diffs cleanly, and wrongly, against another. */
+export const writeTurnRoot = (dir: string, root: string): void => {
+  createOnce(path.join(dir, "root"), root);
+};
+
+export const readTurnRoot = (dir: string): string | undefined => {
+  try {
+    return readFileSync(path.join(dir, "root"), "utf8");
+  } catch {
+    return undefined;
+  }
+};
+
 export const createTurnDiffKey = (fileDiffs: readonly { file: string; text: string }[]): string =>
   shortHash(JSON.stringify(fileDiffs.map((f) => [f.file, f.text])));
 
