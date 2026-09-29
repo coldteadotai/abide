@@ -39,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "@types/diff": "8.0.0",
     "@types/node": "^22",
     "@types/picomatch": "4.0.3",
