@@ -1,7 +1,13 @@
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { Rule, Thresholds, Verdict } from "@coldtea/abide-schema";
+import {
+  AbideError,
+  assertNever,
+  type Rule,
+  type Thresholds,
+  type Verdict,
+} from "@coldtea/abide-schema";
 import { loudestVerdicts, runCheck, type CheckOutcome } from "./checkRunner.js";
 import { MAX_DIFF_INPUT_CHARS } from "./constants.js";
 import { isExcludedPath, relativeToRoot } from "./paths.js";
@@ -32,7 +38,30 @@ export const listRepoFiles = (root: string, paths: readonly string[]): string[] 
     maxBuffer: 64 * 1024 * 1024,
     timeout: 20_000,
   });
-  if (result.status !== 0) return [];
+  // An empty list would read as a clean audit, so a git that could not answer must say so.
+  if (result.status !== 0) {
+    const code =
+      result.error !== undefined && "code" in result.error ? result.error.code : undefined;
+    const failure = code === "ETIMEDOUT" ? "timeout" : code === "ENOBUFS" ? "overflow" : "refused";
+    switch (failure) {
+      case "timeout":
+        throw new AbideError("GIT_UNAVAILABLE", "git took too long to list the files");
+      case "overflow":
+        throw new AbideError("GIT_UNAVAILABLE", "git listed more files than audit can hold");
+      case "refused": {
+        const said = (result.stderr ?? "")
+          .trim()
+          .split("\n")[0]
+          ?.replace(/^fatal: /, "");
+        throw new AbideError(
+          "GIT_UNAVAILABLE",
+          said ? `git could not list the files: ${said}` : "git could not list the files",
+        );
+      }
+      default:
+        return assertNever(failure);
+    }
+  }
   return result.stdout
     .split("\0")
     .filter((f) => f !== "" && !SKIP_FILE.test(f) && !isExcludedPath(f));

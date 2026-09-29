@@ -44,6 +44,23 @@ describe("audit", () => {
     expect(skipped.outOfScope).toBe(2);
   });
 
+  it("fails when git cannot list the files, instead of passing an empty audit", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-audit-"));
+    execSync("git init -q .", { cwd: root });
+    expect(() => listRepoFiles(root, ["../elsewhere"])).toThrow(
+      expect.objectContaining({
+        code: "GIT_UNAVAILABLE",
+        message: expect.stringMatching(/outside repository/),
+      }),
+    );
+  });
+
+  it("lists nothing, without failing, when a path matches no file", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-audit-"));
+    execSync("git init -q .", { cwd: root });
+    expect(listRepoFiles(root, ["nothing-here"])).toEqual([]);
+  });
+
   it("does not follow a symlink out of the repository, whether the file or a directory above it", () => {
     const root = mkdtempSync(path.join(tmpdir(), "abide-audit-"));
     const outside = mkdtempSync(path.join(tmpdir(), "abide-outside-"));
