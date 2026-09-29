@@ -2,7 +2,7 @@
 
 Date: 2026-09-18. Judge: Jev (`jev-latest`), called directly with a TypeSafe key.
 
-NB: I ran this on my [private project](www.coldtea.ai), and one public one (https://github.com/coldteadotai/pr-lens) But the method can be reproduced as below.
+NB: I ran this on my [private project](https://www.coldtea.ai), and one public one (https://github.com/coldteadotai/pr-lens). But the method can be reproduced as below.
 
 ## Method
 
