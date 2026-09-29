@@ -23,7 +23,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "rm -rf dist skills && tsc -p tsconfig.build.json && mkdir -p skills/abide-compile && cp ../../skills/abide-compile/SKILL.md skills/abide-compile/SKILL.md",
+    "build": "node ../../scripts/rm.mjs dist skills && tsc -p tsconfig.build.json && node ../../scripts/copy.mjs ../../skills/abide-compile/SKILL.md skills/abide-compile/SKILL.md",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

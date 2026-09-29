@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,6 +43,15 @@ describe("hosts", () => {
     mkdirSync(path.join(home, ".codex"));
     mkdirSync(path.join(home, ".config", "opencode"), { recursive: true });
     expect(detectHosts()).toEqual(["codex", "opencode"]);
+  });
+
+  it("detects a host that is only on PATH, spelled as its shell would find it", () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "abide-bin-"));
+    const launcher = path.join(bin, process.platform === "win32" ? "claude.cmd" : "claude");
+    writeFileSync(launcher, "");
+    chmodSync(launcher, 0o755);
+    process.env.PATH = bin;
+    expect(detectHosts()).toEqual(["claude"]);
   });
 
   it("writes Claude and Codex hooks into their own files and removes only its own entries", () => {
