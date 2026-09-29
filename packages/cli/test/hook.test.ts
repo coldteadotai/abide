@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +20,19 @@ const run = (name: string, input: string) =>
     env: { ...process.env, AI_GATEWAY_API_KEY: "", TYPESAFE_AI_API_KEY: "", ABIDE_HOME_DIR: home },
     timeout: 25_000,
   });
+
+const git = (root: string, ...args: string[]): void => {
+  execFileSync("git", args, { cwd: root });
+};
+
+/** A repo whose *.ts files pass through a clean filter git runs in its own shell. */
+const commitWithFilter = (root: string, name: string, clean: string, ...add: string[]): void => {
+  writeFileSync(path.join(root, ".gitattributes"), `*.ts filter=${name}\n`);
+  git(root, "init", "-q", ".");
+  git(root, "config", `filter.${name}.clean`, clean);
+  git(root, "add", ...add);
+  git(root, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "init");
+};
 
 const rubricWith = (rules: unknown[]): string =>
   JSON.stringify({ version: 1, compiledAt: "x", sources: [{ path: "AGENTS.md" }], rules });
@@ -158,10 +171,7 @@ describe("the hook never breaks the agent (needs `pnpm build` first)", () => {
 
   it("a git clean filter that hangs cannot hold turn-start past its budget", () => {
     const root = repoWith([]);
-    execSync(
-      "git init -q . && git config filter.slow.clean 'sleep 30; cat' && printf '*.ts filter=slow\\n' > .gitattributes && git add -A && git -c user.email=a@b -c user.name=a commit -q -m init",
-      { cwd: root },
-    );
+    commitWithFilter(root, "slow", "sleep 30; cat", "-A");
     writeFileSync(path.join(root, "slow.ts"), "export const slow = 1;\n");
     const started = performance.now();
     const r = run(
@@ -250,10 +260,8 @@ describe("the hook never breaks the agent (needs `pnpm build` first)", () => {
     };
     for (const mixed of [true, false]) {
       const root = repoWith([turnRule]);
-      execSync(
-        "git init -q . && git config filter.bad.clean false && git config filter.bad.required true && printf '*.ts filter=bad\\n' > .gitattributes && git add .gitattributes AGENTS.md .abide && git -c user.email=a@b -c user.name=a commit -q -m init",
-        { cwd: root },
-      );
+      commitWithFilter(root, "bad", "false", ".gitattributes", "AGENTS.md", ".abide");
+      git(root, "config", "filter.bad.required", "true");
       writeFileSync(path.join(root, "seed.ts"), "export const seed = 1;\n");
       const base = {
         session_id: mixed ? "failed-mixed" : "failed-shell-only",

@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { AbideError, assertNever, HOSTS, hostSchema, type Host } from "@coldtea/abide-schema";
+import { findExecutable } from "./executable.js";
 import { installOpencodePlugin, uninstallOpencodePlugin } from "./opencodePlugin.js";
 import { hookScriptPath } from "./packageRoot.js";
 import { homeDir } from "./paths.js";
@@ -27,8 +27,7 @@ export const parseHost = (name: string): Host => {
   return parsed.data;
 };
 
-const onPath = (bin: string): boolean =>
-  spawnSync("which", [bin], { encoding: "utf8" }).status === 0;
+const onPath = (bin: string): boolean => findExecutable(bin) !== undefined;
 
 export const hostPresent = (host: Host): boolean => {
   switch (host) {

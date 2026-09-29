@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -11,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compileSkillPath, placeCompileSkill } from "../src/lib/packageRoot.js";
+import { mkfifo, NO_FIFO } from "./helpers/fifo.js";
 
 describe("placing the compile skill in a repo (needs `pnpm build` first)", () => {
   it("copies it into .abide", () => {
@@ -21,13 +21,13 @@ describe("placing the compile skill in a repo (needs `pnpm build` first)", () =>
     expect(placeCompileSkill(root)).toBe(placed);
   });
 
-  it(
+  it.skipIf(NO_FIFO)(
     "refuses a FIFO or a symlink in the copy's place and falls back to the packaged copy",
     { timeout: 3_000 },
     () => {
       const root = mkdtempSync(path.join(tmpdir(), "abide-skill-"));
       mkdirSync(path.join(root, ".abide"));
-      execSync(`mkfifo "${path.join(root, ".abide", "compile-skill.md")}"`);
+      mkfifo(path.join(root, ".abide", "compile-skill.md"));
       expect(placeCompileSkill(root)).toBe(compileSkillPath());
 
       const other = mkdtempSync(path.join(tmpdir(), "abide-skill-"));

@@ -1,9 +1,9 @@
-import { execSync } from "node:child_process";
 import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { readRegularFile, readRegularText, writeRegularFile } from "../src/lib/regularFile.js";
+import { mkfifo, NO_FIFO } from "./helpers/fifo.js";
 
 vi.mock("node:fs", async (importActual) => {
   const actual = await importActual<typeof import("node:fs")>();
@@ -21,10 +21,10 @@ describe("reading files the agent points at", () => {
     expect(readRegularText(path.join(dir, "missing"))).toBeUndefined();
   });
 
-  it("refuses a FIFO instead of waiting on its writer", { timeout: 3_000 }, () => {
+  it.skipIf(NO_FIFO)("refuses a FIFO instead of waiting on its writer", { timeout: 3_000 }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), "abide-read-"));
     const fifo = path.join(dir, "pipe");
-    execSync(`mkfifo "${fifo}"`);
+    mkfifo(fifo);
     expect(readRegularFile(fifo)).toBeUndefined();
     expect(readRegularFile("/dev/zero")).toBeUndefined();
   });
