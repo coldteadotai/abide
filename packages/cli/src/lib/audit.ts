@@ -38,7 +38,6 @@ export const listRepoFiles = (root: string, paths: readonly string[]): string[] 
     maxBuffer: 64 * 1024 * 1024,
     timeout: 20_000,
   });
-  // An empty list would read as a clean audit, so a git that could not answer must say so.
   if (result.status !== 0) {
     const code =
       result.error !== undefined && "code" in result.error ? result.error.code : undefined;
