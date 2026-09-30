@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Abide 0.0.7</title>
+    <style>
+      @font-face {
+        font-family: "Geist";
+        src: url("fonts/Geist-Variable.woff2") format("woff2");
+        font-weight: 100 900;
+      }
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+        font-weight: 100 900;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #f4f4f5;
+      }
+      body {
+        width: 1200px;
+        height: 1200px;
+        overflow: hidden;
+        position: relative;
+      }
+      svg {
+        position: absolute;
+        inset: 0;
+      }
+      text {
+        font-variant-numeric: tabular-nums;
+      }
+      .sans {
+        font-family: "Geist", sans-serif;
+      }
+      .mono {
+        font-family: "Geist Mono", monospace;
+      }
+      #officer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 200px;
+        height: 200px;
+        transform-origin: 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <svg id="scene" width="1200" height="1200" viewBox="0 0 1200 1200"></svg>
+    <img id="officer" src="../images/abide.png" alt="" />
+
+    <script>
+      // The 0.0.7 release cut: four changes since launch, one beat each, then a
+      // sign-off. Every frame is a pure function of t, so capture.mjs can seek to
+      // any time and get the same picture:
+      //
+      //   PAGE=release-0.0.7.html node capture.mjs frames 30
+      //
+      // One neutral scale, and the red of the officer's cap for the only accent.
+      const INK = "#09090b";
+      const MUTED = "#71717a";
+      const FAINT = "#d4d4d8";
+      const LINE = "#e4e4e7";
+      const RED = "#e23b35";
+      const M = 72;
+
+      const clamp = (x) => Math.min(1, Math.max(0, x));
+      const p = (t, a, b) => clamp((t - a) / (b - a));
+      const mix = (a, b, k) => a + (b - a) * k;
+      const out = (x) => 1 - Math.pow(1 - x, 3);
+      // cubic-bezier(0.2, 0, 0, 1), solved for x by bisection.
+      const ease = (x) => {
+        if (x <= 0 || x >= 1) return clamp(x);
+        let lo = 0;
+        let hi = 1;
+        for (let i = 0; i < 22; i++) {
+          const t = (lo + hi) / 2;
+          if (0.6 * (1 - t) * (1 - t) * t + t * t * t < x) lo = t;
+          else hi = t;
+        }
+        const t = (lo + hi) / 2;
+        return 3 * (1 - t) * t * t + t * t * t;
+      };
+      const rand = (i, s = 0) => {
+        const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453;
+        return x - Math.floor(x);
+      };
+      const n = (x) => x.toFixed(1);
+      const a3 = (x) => clamp(x).toFixed(3);
+      const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      const ctx = document.createElement("canvas").getContext("2d");
+      const width = (s, size, { weight = 400, font = "Geist" } = {}) => {
+        ctx.font = `${weight} ${size}px "${font}"`;
+        return ctx.measureText(s).width;
+      };
+      const monoW = (s, size, weight = 400) => width(s, size, { weight, font: "Geist Mono" });
+
+      const text = (s, x, y, o = {}) => {
+        const { size = 30, fill = INK, weight = 400, mono = false, anchor = "start", track = 0 } = o;
+        return `<text class="${mono ? "mono" : "sans"}" x="${n(x)}" y="${n(y)}" font-size="${size}" fill="${fill}" font-weight="${weight}" text-anchor="${anchor}" letter-spacing="${(track * size).toFixed(2)}" xml:space="preserve">${esc(s)}</text>`;
+      };
+      const wrap = (s, size, maxW) => {
+        const lines = [];
+        let line = "";
+        for (const word of s.split(" ")) {
+          const next = line ? `${line} ${word}` : word;
+          if (line && width(next, size) > maxW) {
+            lines.push(line);
+            line = word;
+          } else line = next;
+        }
+        return [...lines, line];
+      };
+      // Wrapped lines are evened out so the last one is never a lone word.
+      const paragraph = (s, x, y, { size = 34, lh = 46, maxW = 1000, fill = MUTED } = {}) => {
+        const loose = wrap(s, size, maxW);
+        const even = wrap(s, size, (width(s, size) / loose.length) * 1.08);
+        const lines = even.length === loose.length ? even : loose;
+        return lines.map((l, i) => text(l, x, y + i * lh, { size, fill })).join("");
+      };
+      const typed = (s, k) => s.slice(0, Math.round(s.length * clamp(k)));
+
+      const reveal = (inner, k, gone = 0) => {
+        const e = ease(k);
+        const o = e * (1 - gone);
+        if (o <= 0.001) return "";
+        const blur = 4 * (1 - e) + 4 * gone;
+        return `<g opacity="${a3(o)}" transform="translate(0 ${n(12 * (1 - e) - 12 * out(gone))})" ${blur > 0.05 ? `style="filter:blur(${blur.toFixed(2)}px)"` : ""}>${inner}</g>`;
+      };
+
+      // Phosphor bold, 256 units square.
+      const ICONS = {
+        check:
+          "M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z",
+        x: "M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z",
+      };
+      const badge = (name, cx, cy, r, k, { disc = INK, glyph = "#fff" } = {}) => {
+        if (k <= 0) return "";
+        const e = ease(k);
+        const size = r * 1.16;
+        return `<g opacity="${a3(e)}" transform="translate(${n(cx)} ${n(cy)}) scale(${mix(0.25, 1, e).toFixed(3)})" ${e < 0.99 ? `style="filter:blur(${(4 * (1 - e)).toFixed(2)}px)"` : ""}>
+          <circle r="${r}" fill="${disc}"/>
+          <path d="${ICONS[name]}" fill="${glyph}" transform="translate(${n(-size / 2)} ${n(-size / 2)}) scale(${(size / 256).toFixed(4)})"/>
+        </g>`;
+      };
+
+      const surface = (x, y, w, h, { r = 14, fill = "#fff", ring = "rgba(9,9,11,0.08)", rw = 1 } = {}) =>
+        `<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" rx="${r}" fill="${fill}" stroke="${ring}" stroke-width="${rw}" filter="url(#lift)"/>`;
+
+      const DEFS = `<defs>
+        <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#09090b" flood-opacity="0.06"/>
+          <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#09090b" flood-opacity="0.04"/>
+        </filter>
+      </defs>`;
+
+      const heading = (title, sub, u, gone, still = false) =>
+        reveal(text(title, M, 224, { size: 76, weight: 600, track: -0.035 }), still ? 1 : p(u, 0, 0.4), gone) +
+        reveal(paragraph(sub, M, 286), still ? 1 : p(u, 0.1, 0.5), gone);
+
+      const stat = (value, label, y, { color = INK, swatch } = {}) => {
+        const x = 744;
+        const mark =
+          swatch === undefined
+            ? ""
+            : `<rect x="${x}" y="${y + 21}" width="22" height="22" rx="6" fill="${swatch}" stroke="rgba(9,9,11,0.2)" stroke-width="1"/>`;
+        return (
+          text(value, x, y, { size: 84, weight: 600, fill: color, track: -0.03 }) +
+          mark +
+          text(label, swatch === undefined ? x : x + 34, y + 42, { size: 30, fill: MUTED })
+        );
+      };
+
+      // The cut opens this far into the pour, so the poster frame is not an empty page.
+      const POSTER = 0.9;
+      const CARD = { w: 104, h: 128, gap: 18, y0: 392 };
+      const slot = (i) => ({
+        x: M + (i % 5) * (CARD.w + CARD.gap) + CARD.w / 2,
+        y: CARD.y0 + Math.floor(i / 5) * (CARD.h + CARD.gap) + CARD.h / 2,
+      });
+      const AGENT_SLOT = 12;
+      const PULLED = [...Array(23).keys()].filter((i) => i !== AGENT_SLOT);
+      const skeleton = (seed, color) =>
+        [0, 1, 2, 3]
+          .map((r) => {
+            const y = -38 + r * 20;
+            return `<line x1="-34" y1="${y}" x2="${n(-4 + rand(seed, r) * 38)}" y2="${y}" stroke="${color}" stroke-width="6" stroke-linecap="round"/>`;
+          })
+          .join("");
+
+      const pulls = (u0, gone) => {
+        const u = u0 + POSTER;
+        const after = ease(p(u, 4.8, 5.2));
+        let arrived = 0;
+        let blamed = 0;
+        const cards = PULLED.map((s, j) => {
+          const k = p(u, 0.3 + j * 0.06, 0.7 + j * 0.06);
+          if (k >= 0.5) arrived++;
+          const rise = ease(p(u, 3.4 + j * 0.025, 3.6 + j * 0.025));
+          if (rise >= 0.5) blamed++;
+          const b = rise * (1 - ease(p(u, 4.8 + j * 0.012, 5.0 + j * 0.012)));
+          const c = slot(s);
+          return reveal(
+            `<g transform="translate(${n(c.x)} ${n(c.y)})" opacity="${a3(mix(1, 0.34, after))}">
+              ${surface(-CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h, { r: 12 })}
+              <rect x="${-CARD.w / 2}" y="${-CARD.h / 2}" width="${CARD.w}" height="${CARD.h}" rx="12" fill="${RED}" fill-opacity="${a3(0.07 * b)}" stroke="${RED}" stroke-width="2" stroke-opacity="${a3(b)}"/>
+              ${skeleton(j, LINE)}
+              ${badge("x", CARD.w / 2 - 24, CARD.h / 2 - 24, 14, b, { disc: RED })}
+            </g>`,
+            k,
+          );
+        });
+        const ac = slot(AGENT_SLOT);
+        const agent = reveal(
+          `<g transform="translate(${n(ac.x)} ${n(ac.y)})">
+            ${surface(-CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h, { r: 12, fill: INK, ring: INK })}
+            ${skeleton(99, "#52525b")}
+            ${badge("check", CARD.w / 2 - 26, CARD.h / 2 - 26, 16, p(u, 5.1, 5.4), { disc: "#fff", glyph: INK })}
+          </g>`,
+          p(u, 2.0, 2.4),
+        );
+
+        const flip = p(u, 4.8, 5.3);
+        const verdict =
+          flip < 0.5
+            ? reveal(
+                stat(String(blamed), "were blamed on the agent", 768, { color: RED }),
+                p(u, 3.3, 3.7),
+                p(flip, 0, 0.5),
+              )
+            : reveal(stat("1", "is judged now", 768), p(flip, 0.5, 1));
+        return (
+          heading(
+            "Skips pulled files",
+            "Files from a pull or fast-forward are no longer judged as the agent's work.",
+            u,
+            gone,
+            true,
+          ) +
+          reveal(cards.join("") + agent, 1, gone) +
+          reveal(
+            stat(String(arrived), "files pulled in", 468, { swatch: "#fff" }) +
+              reveal(stat("1", "file edited by the agent", 618, { swatch: INK }), p(u, 2.0, 2.4)) +
+              verdict,
+            1,
+            gone,
+          )
+        );
+      };
+
+      const PROMPT = "PS C:\\storefront> ";
+      const WIN_LINES = [
+        { cmd: "pnpm build", at: 0.5, len: 0.35 },
+        { cmd: "pnpm test", at: 1.25, len: 0.35 },
+        { cmd: "npx @coldtea/abide init", at: 2.0, len: 0.55 },
+      ];
+      const windows = (u, gone) => {
+        const cx = M + monoW(PROMPT, 40);
+        const rows = WIN_LINES.map((ln, i) => {
+          const y = 470 + i * 126;
+          const k = p(u, ln.at, ln.at + ln.len);
+          const shown = typed(ln.cmd, k);
+          const cursor =
+            k > 0 && k < 1
+              ? `<rect x="${n(cx + monoW(shown, 40, 500) + 3)}" y="${y - 35}" width="20" height="45" fill="${INK}"/>`
+              : "";
+          return reveal(
+            text(PROMPT, M, y, { size: 40, mono: true, fill: MUTED }) +
+              text(shown, cx, y, { size: 40, mono: true, weight: 500 }) +
+              cursor +
+              badge("check", 1106, y - 13, 22, p(u, ln.at + ln.len + 0.1, ln.at + ln.len + 0.4)),
+            p(u, ln.at - 0.2, ln.at + 0.2),
+            gone,
+          );
+        });
+        return (
+          heading("Runs on Windows", "The build scripts and tests no longer need POSIX commands.", u, gone) +
+          rows.join("") +
+          reveal(
+            text("init now finds claude.cmd on your PATH", cx, 782, { size: 30, fill: MUTED }),
+            p(u, 2.9, 3.3),
+            gone,
+          )
+        );
+      };
+
+      const YA = 500;
+      const YB = 720;
+      const bez = (s) => {
+        const pts = [
+          [540, YA],
+          [660, YA],
+          [660, YB],
+          [780, YB],
+        ];
+        const m = 1 - s;
+        return [0, 1].map(
+          (i) => m * m * m * pts[0][i] + 3 * m * m * s * pts[1][i] + 3 * m * s * s * pts[2][i] + s * s * s * pts[3][i],
+        );
+      };
+      // The turn's route as points, so the moving dot can follow the same line.
+      const ROUTE = [[420, YA], ...Array.from({ length: 41 }, (_, i) => bez(i / 40)), [900, YB]];
+      const ROUTE_LEN = ROUTE.slice(1).map((q, i) => Math.hypot(q[0] - ROUTE[i][0], q[1] - ROUTE[i][1]));
+      const ROUTE_TOTAL = ROUTE_LEN.reduce((a, b) => a + b, 0);
+      const along = (k) => {
+        let left = clamp(k) * ROUTE_TOTAL;
+        for (let i = 0; i < ROUTE_LEN.length; i++) {
+          if (left <= ROUTE_LEN[i]) {
+            const f = left / ROUTE_LEN[i];
+            return [mix(ROUTE[i][0], ROUTE[i + 1][0], f), mix(ROUTE[i][1], ROUTE[i + 1][1], f)];
+          }
+          left -= ROUTE_LEN[i];
+        }
+        return ROUTE[ROUTE.length - 1];
+      };
+      const lane = (y, name, branch, dots) =>
+        text(name, M, y - 40, { size: 30, weight: 600 }) +
+        text(branch, M + width(name, 30, { weight: 600 }) + 16, y - 40, { size: 26, mono: true, fill: MUTED }) +
+        `<line x1="${M}" y1="${y}" x2="${1200 - M}" y2="${y}" stroke="${FAINT}" stroke-width="2"/>` +
+        dots.map((x) => `<circle cx="${x}" cy="${y}" r="8" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="2"/>`).join("");
+      const worktrees = (u, gone) => {
+        const k = ease(p(u, 0.7, 1.9));
+        const d = ROUTE.map((q, i) => `${i === 0 ? "M" : "L"} ${n(q[0])} ${n(q[1])}`).join(" ");
+        const [hx, hy] = along(k);
+        const dot = (x, y) => `<circle cx="${n(x)}" cy="${n(y)}" r="11" fill="${INK}"/>`;
+        const label = (s, x, y) => text(s, x, y + 52, { size: 30, weight: 500, anchor: "middle" });
+        return (
+          heading(
+            "Handles worktrees",
+            "A turn that starts in one worktree and ends in another would be diffed across two branches.",
+            u,
+            gone,
+          ) +
+          reveal(
+            lane(YA, "worktree A", "main", [170, 290, 1010]) +
+              lane(YB, "worktree B", "feature/login", [150, 300, 450, 1050]) +
+              `<path d="${d}" pathLength="1" stroke-dasharray="1" stroke-dashoffset="${a3(1 - k)}" fill="none" stroke="${INK}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>` +
+              reveal(dot(420, YA) + label("turn starts", 420, YA), p(u, 0.4, 0.8)) +
+              (k > 0 ? dot(hx, hy) : "") +
+              reveal(label("turn ends", 900, YB), p(u, 1.8, 2.2)),
+            p(u, 0.2, 0.6),
+            gone,
+          ) +
+          reveal(
+            badge("check", M + 22, 868, 22, p(u, 2.2, 2.5)) +
+              text("abide skips the turn check and logs why", M + 62, 880, { size: 34, weight: 500 }),
+            p(u, 2.1, 2.5),
+            gone,
+          )
+        );
+      };
+
+      const ENV = "TYPESAFE_AI_BASE_URL=https://jev.internal";
+      const MID = 680;
+      const TARGETS = [
+        { cy: MID - 116, name: "api.typesafe.ai", tag: "default" },
+        { cy: MID, name: "jev.internal", tag: "self-hosted" },
+        { cy: MID + 116, name: "localhost:8787", tag: "local proxy or mock" },
+      ];
+      const wire = (cy) => {
+        const dir = Math.sign(cy - MID);
+        return dir === 0
+          ? `M 292 ${MID} H 690`
+          : `M 292 ${MID} H 482 Q 496 ${MID} 496 ${MID + dir * 14} V ${cy - dir * 14} Q 496 ${cy} 510 ${cy} H 690`;
+      };
+      const endpoint = (u, gone) => {
+        const k = p(u, 0.5, 1.4);
+        const shown = typed(ENV, k);
+        const cursor =
+          k > 0 && k < 1
+            ? `<rect x="${n(M + 28 + monoW(shown, 28, 500) + 3)}" y="407" width="14" height="32" fill="${INK}"/>`
+            : "";
+        const sw = ease(p(u, 1.6, 2.0));
+        const stroke = `fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"`;
+        const head = (cy, color) =>
+          `<path d="M 680 ${cy - 9} L 690 ${cy} L 680 ${cy + 9}" stroke="${color}" ${stroke}/>`;
+        const boxes = TARGETS.map((tg, i) => {
+          const on = i === 1 ? sw : i === 0 ? 1 - sw : 0;
+          return `<g opacity="${a3(mix(0.6, 1, on))}">
+            ${surface(700, tg.cy - 48, 428, 96, on > 0.5 ? { ring: INK, rw: 2 } : {})}
+            ${text(tg.name, 728, tg.cy - 4, { size: 27, mono: true, weight: 500 })}
+            ${text(tg.tag, 728, tg.cy + 29, { size: 24, fill: MUTED })}
+          </g>`;
+        }).join("");
+        const was = sw > 0.5 ? FAINT : INK;
+        return (
+          heading(
+            "Takes a custom endpoint",
+            "Checks can go to a self-hosted deployment, a local proxy or a mock.",
+            u,
+            gone,
+          ) +
+          reveal(
+            surface(M, 384, monoW(ENV, 28, 500) + 56, 78) +
+              text(shown, M + 28, 433, { size: 28, mono: true, weight: 500 }) +
+              cursor,
+            p(u, 0.2, 0.6),
+            gone,
+          ) +
+          reveal(
+            surface(M, MID - 55, 220, 110) +
+              text("abide", M + 110, MID + 12, { size: 34, weight: 600, anchor: "middle", track: -0.02 }) +
+              `<path d="${wire(TARGETS[0].cy)}" stroke="${was}" ${stroke}/>${head(TARGETS[0].cy, was)}` +
+              `<path d="${wire(MID)}" pathLength="1" stroke-dasharray="1" stroke-dashoffset="${a3(1 - ease(p(u, 1.6, 2.1)))}" stroke="${INK}" ${stroke}/>` +
+              (u >= 2.05 ? head(MID, INK) : "") +
+              boxes,
+            p(u, 0.3, 0.7),
+            gone,
+          ) +
+          reveal(text("Contributed in PR #4", M, 826, { size: 30, fill: MUTED }), p(u, 2.2, 2.6), gone)
+        );
+      };
+
+      const outro = (u) => {
+        const cmd = "npx @coldtea/abide init";
+        return (
+          reveal(text("abide 0.0.7", M, 540, { size: 108, weight: 600, track: -0.045 }), p(u, 0.2, 0.6)) +
+          reveal(text("Out now on npm.", M, 604, { size: 34, fill: MUTED }), p(u, 0.3, 0.7)) +
+          reveal(
+            `<rect x="${M}" y="660" width="${n(monoW(cmd, 32, 500) + 64)}" height="88" rx="14" fill="${INK}"/>` +
+              text(cmd, M + 32, 715, { size: 32, mono: true, weight: 500, fill: "#fff" }),
+            p(u, 0.4, 0.8),
+          ) +
+          reveal(text("github.com/coldteadotai/abide", M, 812, { size: 28, mono: true, fill: MUTED }), p(u, 0.5, 0.9))
+        );
+      };
+
+      const BEATS = [
+        { at: 0, len: 6.0, draw: pulls },
+        { at: 6.0, len: 4.2, draw: windows },
+        { at: 10.2, len: 3.9, draw: worktrees },
+        { at: 14.1, len: 3.7, draw: endpoint },
+        { at: 17.8, len: 3.2, draw: outro },
+      ];
+      const OUTRO = BEATS[BEATS.length - 1];
+
+      const scene = document.getElementById("scene");
+      const officer = document.getElementById("officer");
+
+      const placeOfficer = (t) => {
+        const k = ease(p(t, OUTRO.at - 0.1, OUTRO.at + 0.6));
+        const lean = ease(p(t, 3.4 - POSTER, 3.8 - POSTER)) * (1 - ease(p(t, 4.8 - POSTER, 5.2 - POSTER)));
+        const size = mix(236, 450, k) * (1 + 0.05 * lean);
+        const rot = mix(-6, 0, k) - 7 * lean;
+        officer.style.transform = `translate(${n(mix(1010, 900, k))}px, ${n(mix(990, 590, k))}px) rotate(${n(rot)}deg) scale(${(size / 200).toFixed(3)}) translate(-100px, -100px)`;
+      };
+
+      window.seek = (t) => {
+        const beat = BEATS.filter((b) => t >= b.at).pop() ?? BEATS[0];
+        const u = t - beat.at;
+        const gone = beat === OUTRO ? 0 : p(u, beat.len - 0.2, beat.len);
+        const brand =
+          text("abide", M, 108, { size: 30, weight: 600, track: -0.02 }) +
+          text("0.0.7", M + width("abide", 30, { weight: 600 }) + 12, 108, { size: 26, mono: true, fill: MUTED });
+        scene.innerHTML =
+          DEFS + `<g opacity="${a3(1 - p(t, OUTRO.at - 0.2, OUTRO.at))}">${brand}</g>` + beat.draw(u, gone);
+        placeOfficer(t);
+      };
+      window.duration = OUTRO.at + OUTRO.len;
+      window.ready = Promise.all([
+        ...[400, 500, 600].flatMap((w) => [
+          document.fonts.load(`${w} 30px "Geist"`),
+          document.fonts.load(`${w} 30px "Geist Mono"`),
+        ]),
+        officer.decode(),
+      ]).then(() => {
+        seek(Number(new URLSearchParams(location.search).get("t") ?? window.duration));
+      });
+    </script>
+  </body>
+</html>
