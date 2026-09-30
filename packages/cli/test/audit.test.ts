@@ -71,13 +71,13 @@ describe("audit", () => {
       mkdirSync(path.join(root, "src"));
       writeFileSync(path.join(root, "src", "a.ts"), "export const a = 1;\n");
       symlinkSync(path.join(outside, "secret.ts"), path.join(root, "src", "fixture.ts"));
-      symlinkSync(outside, path.join(root, "config"));
-      symlinkSync(path.join(root, "src"), path.join(root, "alias"));
+      symlinkSync(outside, path.join(root, "config"), "junction");
+      symlinkSync(path.join(root, "src"), path.join(root, "alias"), "junction");
       writeFileSync(path.join(root, ".env"), "KEY=1\n");
       symlinkSync(path.join(root, ".env"), path.join(root, "src", "config.ts"));
       mkdirSync(path.join(root, ".abide"));
       writeFileSync(path.join(root, ".abide", "rubric.json"), "{}\n");
-      symlinkSync(path.join(root, ".abide"), path.join(root, "src", "state"));
+      symlinkSync(path.join(root, ".abide"), path.join(root, "src", "state"), "junction");
       const { files } = auditableFiles(
         root,
         [
