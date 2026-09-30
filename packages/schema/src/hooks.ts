@@ -103,6 +103,7 @@ export type PostToolUseInput = z.infer<typeof postToolUseInputSchema>;
 export const stopInputSchema = z.object({
   ...common,
   hook_event_name: z.literal("Stop"),
+  turn_state: z.enum(["finish", "preserve", "clear"]).default("finish"),
   stop_hook_active: z.boolean().optional(),
   last_assistant_message: z.string().nullable().optional(),
 });

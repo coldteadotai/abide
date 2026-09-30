@@ -20,7 +20,7 @@ export { default } from "../../packages/cli/dist/pi/extension.js";
 
 After you trust the project, a normal `pi` launch discovers this entry point. Use `pi --approve` for a one-off trusted run. Installation through `abide init` and package distribution are not part of this change.
 
-The extension uses Abide's existing key lookup and rubric. Instruction discovery includes Pi's `~/.pi/agent` directory, or `PI_CODING_AGENT_DIR` when set. An `AGENTS.override.md` takes precedence over the other context files in its directory.
+The extension uses Abide's existing key lookup and rubric. Instruction discovery includes Pi's `~/.pi/agent` directory, or `PI_CODING_AGENT_DIR` when set. Pi's global context selection gives `AGENTS.override.md` precedence. Shared project discovery keeps other hosts' instruction files, including `CLAUDE.md`, alongside overrides.
 
 ## Events and checks
 
@@ -33,10 +33,10 @@ Pi loads an extension factory that registers `pi.on()` handlers. The adapter inv
 | `tool_call`           | Capture bounded pre-edit state without blocking the tool                                    |
 | `tool_result`         | Check successful local edits and append named-rule repair feedback                          |
 | `agent_before_settle` | Check the complete diff, including shell changes, and request a bounded repair continuation |
-| `agent_settled`       | Clear transient activity state                                                              |
-| `session_shutdown`    | Cancel outstanding checks and release state                                                 |
+| `agent_settled`       | Clear persisted turn state and transient activity state                                     |
+| `session_shutdown`    | Cancel outstanding checks and release persisted and transient state                         |
 
-One snapshot covers the activity from `before_agent_start` through final settlement, including a repair continuation. Pi's model-turn events do not reset it. The adapter allows at most one final repair continuation. Queued or steered prompts share the activity; Abide's task context currently comes from its initial prompt.
+One snapshot covers the activity from `before_agent_start` through final settlement, including continuations requested by other extensions. Pre-settlement checks retain it; `agent_settled` releases it. Pi's model-turn events do not reset it. The adapter allows at most one final repair continuation. Queued or steered prompts share the activity; Abide's task context currently comes from its initial prompt.
 
 Advisories appear as UI notifications, or as non-context session entries in headless modes. Missing credentials, failed checks, and timeouts leave Pi usable. Code changes still go to TypeSafe or the configured gateway under your key. Checks run after mutations; this adapter is not a pre-write security boundary.
 

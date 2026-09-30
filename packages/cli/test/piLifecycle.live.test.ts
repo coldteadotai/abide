@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,8 @@ const boundarySchema = z.object({
   baselineStarts: z.number(),
   canContinue: z.boolean(),
   repairs: z.number(),
+  precedingEntries: z.number(),
+  baselines: z.number(),
 });
 const records = <T>(file: string, schema: z.ZodType<T>): T[] =>
   readFileSync(file, "utf8")
@@ -39,6 +41,7 @@ it.skipIf(process.env.ABIDE_PI_LIVE !== "1")(
     const repo = path.join(dir, "repo");
     const observations = path.join(dir, "boundaries.jsonl");
     const observer = path.join(dir, "observe.mjs");
+    const preceding = path.join(dir, "preceding.mjs");
     const file = "packages/cli/src/pi/repair-smoke.ts";
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -60,8 +63,14 @@ it.skipIf(process.env.ABIDE_PI_LIVE !== "1")(
     try {
       await exec("git", ["clone", "--quiet", "--shared", root, repo]);
       writeFileSync(
+        preceding,
+        `export default function(pi) {
+  pi.on("agent_before_settle", (event) => ({entries:[...event.entries,{type:"custom",customType:"preceding-extension",data:{present:true}}]}));
+}\n`,
+      );
+      writeFileSync(
         observer,
-        `import { appendFileSync } from "node:fs";
+        `import { appendFileSync, readdirSync } from "node:fs";
 export default function(pi) {
   let baselineStarts = 0;
   let initialWrite = true;
@@ -75,7 +84,7 @@ export default function(pi) {
   });
   pi.on("agent_before_settle", (event) => {
     if (event.entries.some(x=>x.type==="custom_message"&&x.customType==="abide-repair")) repairAllowed = true;
-    appendFileSync(${JSON.stringify(observations)}, JSON.stringify({baselineStarts, canContinue:event.context.canContinue, repairs:event.entries.filter(x=>x.type==="custom_message"&&x.customType==="abide-repair").length})+"\\n");
+    appendFileSync(${JSON.stringify(observations)}, JSON.stringify({baselineStarts, canContinue:event.context.canContinue, repairs:event.entries.filter(x=>x.type==="custom_message"&&x.customType==="abide-repair").length,precedingEntries:event.entries.filter(x=>x.type==="custom"&&x.customType==="preceding-extension").length,baselines:readdirSync(${JSON.stringify(path.join(dir, "abide-home", ".abide", "sessions"))},{recursive:true}).filter(name=>name.endsWith(${JSON.stringify(path.sep + "baseline")})).length})+"\\n");
   });
 }
 `,
@@ -87,6 +96,8 @@ export default function(pi) {
         "pi",
         [
           "--no-extensions",
+          "--extension",
+          preceding,
           "--extension",
           extension,
           "--extension",
@@ -136,8 +147,16 @@ export default function(pi) {
         ),
       ).toBe(true);
       expect(boundaries[0]?.repairs).toBe(1);
+      expect(boundaries.every((boundary) => boundary.precedingEntries === 1)).toBe(true);
       expect(boundaries).toHaveLength(2);
       expect(boundaries.every((boundary) => boundary.baselineStarts === 1)).toBe(true);
+      expect(boundaries.every((boundary) => boundary.baselines === 1)).toBe(true);
+      expect(
+        readdirSync(path.join(dir, "abide-home", ".abide", "sessions"), {
+          recursive: true,
+          encoding: "utf8",
+        }).filter((name) => name.endsWith(path.sep + "baseline")),
+      ).toEqual([]);
       expect(checks).toHaveLength(2);
       expect(checks[0]?.promptId).toBeTypeOf("string");
       expect(new Set(checks.map((check) => check.promptId)).size).toBe(1);

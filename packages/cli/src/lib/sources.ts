@@ -29,11 +29,9 @@ const contextNames = (dir: string): string[] => {
         name === wanted ||
         (process.platform === "win32" && name.toLowerCase() === wanted.toLowerCase()),
     );
-  const override = findName("AGENTS.override.md");
-  if (override !== undefined) return [override];
   return [
     ...new Set(
-      CONTEXT_NAMES.flatMap((wanted) => {
+      ["AGENTS.override.md", ...CONTEXT_NAMES].flatMap((wanted) => {
         const name = findName(wanted);
         return name === undefined ? [] : [name];
       }),

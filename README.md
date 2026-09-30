@@ -25,7 +25,7 @@ npx @coldtea/abide login    # pick a key type, paste it once
 npx @coldtea/abide init     # hooks into every agent on this machine
 ```
 
-Then start `claude`, `codex` or `opencode` as usual. That is the whole setup.
+Then start `claude`, `codex` or `opencode` as usual. That is the whole setup. Pi uses [manual extension loading](#pi).
 
 ## What it does
 
@@ -73,12 +73,28 @@ The agent repairs it before moving on. No human in the loop.
 | Claude Code | `npx @coldtea/abide init claude`   | `~/.claude/settings.json`             |
 | Codex       | `npx @coldtea/abide init codex`    | `~/.codex/hooks.json`                 |
 | OpenCode    | `npx @coldtea/abide init opencode` | `~/.config/opencode/plugins/abide.js` |
+| Pi          | [Manual extension loading](#pi)    | Built `dist/pi/extension.js`          |
 
 `init` with no name installs into every agent it finds. Add `--project` to install into the repo instead, so teammates get it with the checkout.
 
 Codex only: start `codex`, type `/hooks`, and accept the four abide entries. Codex asks this once for any new hook. Codex edits through `apply_patch`; abide reads the patch and judges every file in it.
 
 OpenCode only: there are no hook processes, so abide runs as a plugin. Same checks, same messages: an edit that breaks a rule gets the repair request appended to its tool result, and a turn that ends with one gets a single follow-up message.
+
+### Pi
+
+Pi support currently uses a manually loaded extension, not `abide init pi`. Build this checkout, then launch Pi from the project you want to check:
+
+```sh
+# In the Abide checkout
+pnpm install
+pnpm build
+
+# In your project
+pi --extension /absolute/path/to/abide/packages/cli/dist/pi/extension.js
+```
+
+Tested with Node-backed Pi 0.99.1. The extension checks local edits and the complete activity diff, including shell changes. It can request one final repair continuation. It uses the same key lookup and rubric as the other agents. [Setup, project-local discovery, limitations, and live verification](docs/pi-extension.md).
 
 ## See what your codebase already breaks
 

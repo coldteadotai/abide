@@ -61,7 +61,7 @@ it("honors a configured Pi agent directory and its override precedence", async (
   expect(discoverGlobalSources().map((source) => source.absolute)).toEqual([override]);
 });
 
-it("uses a project override instead of instruction files Pi shadows in that directory", async () => {
+it("preserves other hosts' project sources when Pi loads a directory override", async () => {
   const cwd = directory();
   const agentDir = directory();
   for (const name of ["AGENTS.md", "CLAUDE.md", "AGENTS.override.md"])
@@ -70,7 +70,16 @@ it("uses a project override instead of instruction files Pi shadows in that dire
   const loaded = await instructions(cwd, agentDir);
   expect(loaded).toContain(override);
   expect(loaded).not.toContain(path.join(cwd, "AGENTS.md"));
-  expect(discoverProjectSources(cwd).map((source) => source.path)).toEqual(["AGENTS.override.md"]);
+  expect(discoverProjectSources(cwd).map((source) => source.path)).toEqual([
+    "AGENTS.override.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+  ]);
+  expect(
+    planCompile(cwd)
+      .targets.find((target) => target.which === "project")
+      ?.candidates.map((source) => source.path),
+  ).toContain("CLAUDE.md");
 });
 
 it("keeps nested override scope consistent with Pi's directory context", async () => {
@@ -83,5 +92,6 @@ it("keeps nested override scope consistent with Pi's directory context", async (
   expect(await instructions(nested, agentDir)).toContain(path.join(nested, "AGENTS.override.md"));
   expect(discoverProjectSources(cwd)).toMatchObject([
     { path: "apps/web/AGENTS.override.md", scope: "apps/web/**/*", required: true },
+    { path: "apps/web/AGENTS.md", scope: "apps/web/**/*", required: true },
   ]);
 });

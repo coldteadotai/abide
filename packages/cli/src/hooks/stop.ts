@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertNever,
   createBlobId,
   isAbideError,
   stopInputSchema,
@@ -182,13 +183,23 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
   const parsed = stopInputSchema.safeParse(raw);
   if (!parsed.success) return { kind: "silent" };
   const input = parsed.data;
+  const dir = turnDir(input.session_id, turnIdOf(input));
+  switch (input.turn_state) {
+    case "clear":
+      clearTurn(dir);
+      return { kind: "silent" };
+    case "finish":
+    case "preserve":
+      break;
+    default:
+      return assertNever(input.turn_state);
+  }
   const started = performance.now();
   const at = new Date().toISOString();
   const root = findRepoRoot(input.cwd);
-  const dir = turnDir(input.session_id, turnIdOf(input));
 
   const finish = (output: HookOutput): HookOutput => {
-    if (output.kind !== "block") clearTurn(dir);
+    if (output.kind !== "block" && input.turn_state === "finish") clearTurn(dir);
     return output;
   };
 

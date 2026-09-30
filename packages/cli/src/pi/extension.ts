@@ -39,6 +39,23 @@ export default function abide(pi: ExtensionAPI): void {
     epoch += 1;
     bridge.close();
   };
+  const finishActivity = async (): Promise<void> => {
+    const current = task;
+    reset();
+    switch (current.kind) {
+      case "idle":
+        return;
+      case "active":
+        await bridge.hook("stop", {
+          ...current.identity,
+          hook_event_name: "Stop",
+          turn_state: "clear",
+        });
+        return;
+      default:
+        return assertNever(current);
+    }
+  };
   const signalFor = (current: ActiveTask, ctx: ExtensionContext): AbortSignal =>
     ctx.signal === undefined
       ? current.controller.signal
@@ -201,7 +218,12 @@ export default function abide(pi: ExtensionAPI): void {
       const signal = signalFor(current, ctx);
       const output = await bridge.hook(
         "stop",
-        { ...current.identity, hook_event_name: "Stop", stop_hook_active: current.followups > 0 },
+        {
+          ...current.identity,
+          hook_event_name: "Stop",
+          turn_state: "preserve",
+          stop_hook_active: current.followups > 0,
+        },
         signal,
       );
       if (!currentTask(current, signal)) return;
@@ -216,6 +238,7 @@ export default function abide(pi: ExtensionAPI): void {
           // Pi validates continuation after applying this repair message.
           return {
             entries: [
+              ...event.entries,
               {
                 type: "custom_message",
                 customType: "abide-repair",
@@ -237,16 +260,16 @@ export default function abide(pi: ExtensionAPI): void {
     }
   });
 
-  pi.on("agent_settled", () => {
+  pi.on("agent_settled", async () => {
     try {
-      reset();
+      await finishActivity();
     } catch {
       task = { kind: "idle" };
     }
   });
-  pi.on("session_shutdown", () => {
+  pi.on("session_shutdown", async () => {
     try {
-      reset();
+      await finishActivity();
       compileContext = undefined;
     } catch {
       task = { kind: "idle" };
