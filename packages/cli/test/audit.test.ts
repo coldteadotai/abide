@@ -11,6 +11,7 @@ import {
   listRepoFiles,
   tallyByRule,
 } from "../src/lib/audit.js";
+import { NO_SYMLINK } from "./helpers/symlink.js";
 
 const rule = (id: string, scope?: string[]): Rule => ({
   id,
@@ -61,34 +62,37 @@ describe("audit", () => {
     expect(listRepoFiles(root, ["nothing-here"])).toEqual([]);
   });
 
-  it("does not follow a symlink out of the repository, whether the file or a directory above it", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "abide-audit-"));
-    const outside = mkdtempSync(path.join(tmpdir(), "abide-outside-"));
-    writeFileSync(path.join(outside, "secret.ts"), "export const key = 'x';\n");
-    mkdirSync(path.join(root, "src"));
-    writeFileSync(path.join(root, "src", "a.ts"), "export const a = 1;\n");
-    symlinkSync(path.join(outside, "secret.ts"), path.join(root, "src", "fixture.ts"));
-    symlinkSync(outside, path.join(root, "config"));
-    symlinkSync(path.join(root, "src"), path.join(root, "alias"));
-    writeFileSync(path.join(root, ".env"), "KEY=1\n");
-    symlinkSync(path.join(root, ".env"), path.join(root, "src", "config.ts"));
-    mkdirSync(path.join(root, ".abide"));
-    writeFileSync(path.join(root, ".abide", "rubric.json"), "{}\n");
-    symlinkSync(path.join(root, ".abide"), path.join(root, "src", "state"));
-    const { files } = auditableFiles(
-      root,
-      [
-        "src/a.ts",
-        "src/fixture.ts",
-        "config/secret.ts",
-        "alias/a.ts",
-        "src/config.ts",
-        "src/state/rubric.json",
-      ],
-      [rule("any", ["**/*"])],
-    );
-    expect(files).toEqual(["src/a.ts", "alias/a.ts"]);
-  });
+  it.skipIf(NO_SYMLINK)(
+    "does not follow a symlink out of the repository, whether the file or a directory above it",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "abide-audit-"));
+      const outside = mkdtempSync(path.join(tmpdir(), "abide-outside-"));
+      writeFileSync(path.join(outside, "secret.ts"), "export const key = 'x';\n");
+      mkdirSync(path.join(root, "src"));
+      writeFileSync(path.join(root, "src", "a.ts"), "export const a = 1;\n");
+      symlinkSync(path.join(outside, "secret.ts"), path.join(root, "src", "fixture.ts"));
+      symlinkSync(outside, path.join(root, "config"), "junction");
+      symlinkSync(path.join(root, "src"), path.join(root, "alias"), "junction");
+      writeFileSync(path.join(root, ".env"), "KEY=1\n");
+      symlinkSync(path.join(root, ".env"), path.join(root, "src", "config.ts"));
+      mkdirSync(path.join(root, ".abide"));
+      writeFileSync(path.join(root, ".abide", "rubric.json"), "{}\n");
+      symlinkSync(path.join(root, ".abide"), path.join(root, "src", "state"), "junction");
+      const { files } = auditableFiles(
+        root,
+        [
+          "src/a.ts",
+          "src/fixture.ts",
+          "config/secret.ts",
+          "alias/a.ts",
+          "src/config.ts",
+          "src/state/rubric.json",
+        ],
+        [rule("any", ["**/*"])],
+      );
+      expect(files).toEqual(["src/a.ts", "alias/a.ts"]);
+    },
+  );
 
   it("presents a file as one hunk of added lines, or as chunks that keep their line numbers", () => {
     expect(fileAsAdded("a\nb\n")).toBe("@@ -0,0 +1,2 @@\n+a\n+b");

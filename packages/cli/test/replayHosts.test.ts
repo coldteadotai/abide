@@ -79,12 +79,13 @@ describe("replay from Codex rollouts", () => {
 
 describe("replay from OpenCode rows", () => {
   it("groups parts into turns and maps edit and write tools onto hook payloads", () => {
+    const repo = path.resolve("r", "app");
     const row = (
       messageId: string,
       role: string,
       created: number,
       part: unknown,
-      directory = "/r/app",
+      directory = repo,
       sessionId = "ses_1",
     ) => ({ sessionId, directory, messageId, role, created, part: JSON.stringify(part) });
     const rows = [
@@ -104,7 +105,7 @@ describe("replay from OpenCode rows", () => {
         callID: "e1",
         state: {
           status: "completed",
-          input: { filePath: "/r/app/src/a.ts", oldString: "1", newString: "2" },
+          input: { filePath: path.join(repo, "src", "a.ts"), oldString: "1", newString: "2" },
         },
       }),
       row("m2", "assistant", 2, {
@@ -114,7 +115,7 @@ describe("replay from OpenCode rows", () => {
         state: { status: "completed", input: { command: "ls" } },
       }),
       row("m3", "user", 3, { type: "text", text: "Abide: This edit appears to break a rule" }),
-      row("m4", "user", 1, { type: "text", text: "elsewhere" }, "/other", "ses_2"),
+      row("m4", "user", 1, { type: "text", text: "elsewhere" }, path.resolve("other"), "ses_2"),
       row(
         "m5",
         "assistant",
@@ -125,17 +126,19 @@ describe("replay from OpenCode rows", () => {
           callID: "w2",
           state: { status: "completed", input: { filePath: "x.ts", content: "" } },
         },
-        "/other",
+        path.resolve("other"),
         "ses_2",
       ),
     ];
-    const sessions = opencodeSessionsFromRows("/r/app", rows);
+    const sessions = opencodeSessionsFromRows(repo, rows);
     expect(sessions).toHaveLength(1);
     const [s] = sessions;
     expect(s?.turns.map((t) => [t.index, t.prompt, t.edits.map((e) => e.input.tool_name)])).toEqual(
       [[1, "add a route", ["Write", "Edit"]]],
     );
     const write = s?.turns[0]?.edits[0]?.input;
-    expect(write?.tool_name === "Write" && write.tool_input.file_path).toBe("/r/app/src/a.ts");
+    expect(write?.tool_name === "Write" && write.tool_input.file_path).toBe(
+      path.join(repo, "src", "a.ts"),
+    );
   });
 });

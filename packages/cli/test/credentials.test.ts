@@ -18,6 +18,7 @@ import {
   upsertEnvLine,
   userEnvPath,
 } from "../src/lib/credentials.js";
+import { NO_SYMLINK } from "./helpers/symlink.js";
 
 let home: string;
 let root: string;
@@ -95,7 +96,7 @@ describe("credentials", () => {
     saveKey(userEnvPath(), "AI_GATEWAY_API_KEY", "g");
     const file = userEnvPath();
     expect(readFileSync(file, "utf8")).toBe("TYPESAFE_AI_API_KEY=t\nAI_GATEWAY_API_KEY=g\n");
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it("replaces only its own line in a repo .env.local and leaves the rest untouched", () => {
@@ -113,10 +114,10 @@ describe("credentials", () => {
       key: "new",
       from: ".env.local",
     });
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
-  it("refuses a symlinked .env.local and leaves its target alone", () => {
+  it.skipIf(NO_SYMLINK)("refuses a symlinked .env.local and leaves its target alone", () => {
     const target = path.join(root, "tracked.env");
     writeFileSync(target, "SHARED=1\n");
     symlinkSync(target, projectEnvPath(root));
@@ -134,14 +135,17 @@ describe("credentials", () => {
     );
   });
 
-  it("never truncates an existing file it could not read", () => {
-    const file = projectEnvPath(root);
-    writeFileSync(file, "THEIRS=1\n");
-    chmodSync(file, 0o200);
-    expect(() => saveKey(file, "TYPESAFE_AI_API_KEY", "k")).toThrow("could not be read");
-    chmodSync(file, 0o600);
-    expect(readFileSync(file, "utf8")).toBe("THEIRS=1\n");
-  });
+  it.skipIf(process.platform === "win32")(
+    "never truncates an existing file it could not read",
+    () => {
+      const file = projectEnvPath(root);
+      writeFileSync(file, "THEIRS=1\n");
+      chmodSync(file, 0o200);
+      expect(() => saveKey(file, "TYPESAFE_AI_API_KEY", "k")).toThrow("could not be read");
+      chmodSync(file, 0o600);
+      expect(readFileSync(file, "utf8")).toBe("THEIRS=1\n");
+    },
+  );
 
   it("appends to a file that has no trailing newline and starts an empty one", () => {
     expect(upsertEnvLine("A=1", "B", "2")).toBe("A=1\nB=2\n");
