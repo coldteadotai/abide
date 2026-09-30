@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { readRegularFile, readRegularText, writeRegularFile } from "../src/lib/regularFile.js";
 import { mkfifo, NO_FIFO } from "./helpers/fifo.js";
+import { NO_SYMLINK } from "./helpers/symlink.js";
 
 vi.mock("node:fs", async (importActual) => {
   const actual = await importActual<typeof import("node:fs")>();
@@ -29,7 +30,7 @@ describe("reading files the agent points at", () => {
     expect(readRegularFile("/dev/zero")).toBeUndefined();
   });
 
-  it("follows a symlink only when asked to", () => {
+  it.skipIf(NO_SYMLINK)("follows a symlink only when asked to", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "abide-read-"));
     writeFileSync(path.join(dir, "target"), "t");
     symlinkSync(path.join(dir, "target"), path.join(dir, "link"));

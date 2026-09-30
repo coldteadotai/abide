@@ -86,18 +86,21 @@ describe("turn state on disk", () => {
     ]);
   });
 
-  it("writes its state owner-only, since a snapshot holds whatever the agent edited", () => {
-    const dir = turnDir("s", "p");
-    recordFileStart(dir, "/r/a.ts", "SECRET=1");
-    markBaseline(dir, "ok");
-    const mode = (p: string): number => statSync(p).mode & 0o777;
-    expect(mode(dir)).toBe(0o700);
-    expect(mode(path.join(dir, "files"))).toBe(0o700);
-    for (const name of readdirSync(path.join(dir, "files"))) {
-      expect(mode(path.join(dir, "files", name))).toBe(0o600);
-    }
-    expect(mode(path.join(dir, "baseline-status"))).toBe(0o600);
-  });
+  it.skipIf(process.platform === "win32")(
+    "writes its state owner-only, since a snapshot holds whatever the agent edited",
+    () => {
+      const dir = turnDir("s", "p");
+      recordFileStart(dir, "/r/a.ts", "SECRET=1");
+      markBaseline(dir, "ok");
+      const mode = (p: string): number => statSync(p).mode & 0o777;
+      expect(mode(dir)).toBe(0o700);
+      expect(mode(path.join(dir, "files"))).toBe(0o700);
+      for (const name of readdirSync(path.join(dir, "files"))) {
+        expect(mode(path.join(dir, "files", name))).toBe(0o600);
+      }
+      expect(mode(path.join(dir, "baseline-status"))).toBe(0o600);
+    },
+  );
 
   it("separates prompts and sessions", () => {
     recordFileStart(turnDir("s", "p1"), "/r/a.ts", null);
