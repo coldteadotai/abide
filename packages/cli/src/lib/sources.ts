@@ -1,7 +1,7 @@
 import { readdirSync, existsSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
-import { expandHome, homeDir, resolveSourcePath, toSourcePath } from "./paths.js";
+import { homeDir, piAgentDir, resolveSourcePath, toSourcePath } from "./paths.js";
 import { readRegularFile } from "./regularFile.js";
 
 export type SourceCandidate = {
@@ -115,9 +115,7 @@ export const discoverGlobalSources = (): SourceCandidate[] => {
       ? [{ path: p, absolute, scope: "**/*", required: true, origin: "global" as const }]
       : [];
   });
-  const agentDir = path.resolve(
-    expandHome(process.env.PI_CODING_AGENT_DIR || path.join(homeDir(), ".pi", "agent")),
-  );
+  const agentDir = piAgentDir();
   const name = contextNames(agentDir)[0];
   if (name !== undefined) {
     const absolute = path.join(agentDir, name);

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-111111?style=flat-square" alt="Works with Claude Code, Codex and OpenCode">
+  <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode%20%C2%B7%20Pi-111111?style=flat-square" alt="Works with Claude Code, Codex, OpenCode and Pi">
   <img src="https://img.shields.io/badge/license-MIT-111111?style=flat-square" alt="MIT license">
 </p>
 
@@ -25,7 +25,7 @@ npx @coldtea/abide login    # pick a key type, paste it once
 npx @coldtea/abide init     # hooks into every agent on this machine
 ```
 
-Then start `claude`, `codex` or `opencode` as usual. That is the whole setup. Pi uses [manual extension loading](#pi).
+Then start `claude`, `codex`, `opencode` or `pi` as usual. That is the whole setup.
 
 ## What it does
 
@@ -73,7 +73,7 @@ The agent repairs it before moving on. No human in the loop.
 | Claude Code | `npx @coldtea/abide init claude`   | `~/.claude/settings.json`             |
 | Codex       | `npx @coldtea/abide init codex`    | `~/.codex/hooks.json`                 |
 | OpenCode    | `npx @coldtea/abide init opencode` | `~/.config/opencode/plugins/abide.js` |
-| Pi          | [Manual extension loading](#pi)    | Built `dist/pi/extension.js`          |
+| Pi          | `npx @coldtea/abide init pi`       | `~/.pi/agent/extensions/abide.js`     |
 
 `init` with no name installs into every agent it finds. Add `--project` to install into the repo instead, so teammates get it with the checkout.
 
@@ -83,18 +83,9 @@ OpenCode only: there are no hook processes, so abide runs as a plugin. Same chec
 
 ### Pi
 
-Pi support currently uses a manually loaded extension, not `abide init pi`. Build this checkout, then launch Pi from the project you want to check:
+Run `abide init pi` and restart Pi, or use `/reload` in an existing session. Add `--project` to install into `.pi/extensions/abide.js`; Pi must trust the project before loading it. `PI_CODING_AGENT_DIR` selects a different user-level agent directory.
 
-```sh
-# In the Abide checkout
-pnpm install
-pnpm build
-
-# In your project
-pi --extension /absolute/path/to/abide/packages/cli/dist/pi/extension.js
-```
-
-Tested with Node-backed Pi 0.99.1. The extension checks local edits and the complete activity diff, including shell changes. It can request one final repair continuation. It uses the same key lookup and rubric as the other agents. [Setup, project-local discovery, limitations, and live verification](docs/pi-extension.md).
+Tested with Pi 0.99.1. The extension uses the same checker, key lookup, and rubric as the other agents. It checks local edits and complete activity diffs, including shell changes, and can request one final repair continuation. `abide replay pi` checks recorded Pi edit/write tools on the active persisted branch. [Installation, limitations, and live verification](docs/pi-extension.md).
 
 ## See what your codebase already breaks
 
@@ -108,19 +99,19 @@ Every file is judged as if it had just been written. You get a table by rule and
 
 ## Commands
 
-| Command                   | What it does                                                          |
-| ------------------------- | --------------------------------------------------------------------- |
-| `abide login`             | store your TypeSafe or Vercel AI Gateway key, for you or this repo    |
-| `abide init [agent]`      | install the hooks (`claude`, `codex`, `opencode`, or every one found) |
-| `abide audit [paths]`     | judge existing files, report by rule and by file                      |
-| `abide check [paths]`     | check uncommitted changes the way the hooks would                     |
-| `abide report`            | your rules, what fired, what never fires                              |
-| `abide replay <agent>`    | judge this repo's past sessions in any of the three agents            |
-| `abide compile`           | compile the rubric now instead of at the next session                 |
-| `abide calibrate`         | score every rule against your recent git history                      |
-| `abide tune`              | rewrite the rules that never fire                                     |
-| `abide bench`             | latency and spend, measured on your machine                           |
-| `abide uninstall [agent]` | remove the hooks                                                      |
+| Command                   | What it does                                                                |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `abide login`             | store your TypeSafe or Vercel AI Gateway key, for you or this repo          |
+| `abide init [agent]`      | install the hooks (`claude`, `codex`, `opencode`, `pi`, or every one found) |
+| `abide audit [paths]`     | judge existing files, report by rule and by file                            |
+| `abide check [paths]`     | check uncommitted changes the way the hooks would                           |
+| `abide report`            | your rules, what fired, what never fires                                    |
+| `abide replay <agent>`    | judge this repo's past sessions in any supported agent                      |
+| `abide compile`           | compile the rubric now instead of at the next session                       |
+| `abide calibrate`         | score every rule against your recent git history                            |
+| `abide tune`              | rewrite the rules that never fire                                           |
+| `abide bench`             | latency and spend, measured on your machine                                 |
+| `abide uninstall [agent]` | remove the hooks                                                            |
 
 `report`, `check`, `audit`, `bench` and `calibrate` take `--json`.
 
@@ -161,7 +152,7 @@ Removes abide's own entries and nothing else. Rubric files and `~/.abide/.env` s
 ## Layout
 
 - `packages/schema`: the rubric, hook payloads, verdicts and events as zod schemas.
-- `packages/cli`: the `abide` command, the hook script and the OpenCode plugin.
+- `packages/cli`: the `abide` command, the hook script, OpenCode plugin, and Pi extension.
 - `skills/abide-compile`: the procedure the agent follows to compile a rubric.
 
 ## License

@@ -66,6 +66,15 @@ describe("bounded Pi subprocesses", () => {
     }
     expect(await runJsonProcess("/missing/abide.cjs", [], {}, options)).toBeUndefined();
   });
+  it("fails open when Node is unavailable on PATH", async () => {
+    const { script } = fixture('console.log("{}")');
+    vi.stubEnv("PATH", "");
+    try {
+      expect(await runJsonProcess(script, [], {}, options)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("kills output overflow instead of collecting unlimited stdout", async () => {
     const { script } = fixture('process.stdout.write("x".repeat(4096));setInterval(()=>{},1000)');
     expect(await runJsonProcess(script, [], {}, options)).toBeUndefined();

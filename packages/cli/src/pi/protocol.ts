@@ -9,6 +9,12 @@ export const fileStateSchema = z.discriminatedUnion("kind", [
 ]);
 export type FileState = z.infer<typeof fileStateSchema>;
 
+export const piEditInputSchema = z.object({
+  path: z.string(),
+  edits: z.array(z.object({ oldText: z.string(), newText: z.string() })).min(1),
+});
+export const piWriteInputSchema = z.object({ path: z.string(), content: z.string() });
+
 const blockSchema = z.object({
   decision: z.literal("block"),
   reason: z.string(),

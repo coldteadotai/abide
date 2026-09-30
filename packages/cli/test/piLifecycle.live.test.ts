@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,10 +8,11 @@ import { z } from "zod";
 import { assertNever, eventSchema } from "@coldtea/abide-schema";
 import { expect, it } from "vitest";
 import { findCredentials } from "../src/lib/credentials.js";
+import { piSessionsFor } from "../src/lib/replayPi.js";
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const extension = path.join(root, "packages", "cli", "dist", "pi", "extension.js");
+const bin = path.join(root, "packages", "cli", "dist", "bin.js");
 const boundarySchema = z.object({
   baselineStarts: z.number(),
   canContinue: z.boolean(),
@@ -43,6 +44,7 @@ it.skipIf(process.env.ABIDE_PI_LIVE !== "1")(
     const observer = path.join(dir, "observe.mjs");
     const preceding = path.join(dir, "preceding.mjs");
     const file = "packages/cli/src/pi/repair-smoke.ts";
+    const queuedFile = "packages/cli/src/pi/queued-marker.ts";
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       ABIDE_HOME_DIR: path.join(dir, "abide-home"),
@@ -62,6 +64,12 @@ it.skipIf(process.env.ABIDE_PI_LIVE !== "1")(
     }
     try {
       await exec("git", ["clone", "--quiet", "--shared", root, repo]);
+      await exec(process.execPath, [bin, "init", "pi", "--project"], {
+        cwd: repo,
+        env,
+        timeout: 30_000,
+      });
+      const extension = path.join(repo, ".pi", "extensions", "abide.js");
       writeFileSync(
         preceding,
         `export default function(pi) {
@@ -77,10 +85,13 @@ export default function(pi) {
   let repairAllowed = false;
   pi.on("before_agent_start", () => { baselineStarts += 1; });
   pi.on("tool_call", (event) => {
-    if (event.toolName !== "read" && !initialWrite && !repairAllowed) return {block:true,reason:"Initial-write phase only: finish your response and wait for Abide's final repair request"};
+    if (event.toolName !== "read" && !initialWrite && !repairAllowed && event.input.path !== ${JSON.stringify(queuedFile)}) return {block:true,reason:"Initial-write phase only: finish your response and wait for Abide's final repair request"};
   });
   pi.on("tool_result", (event) => {
-    if (event.toolName === "write" && !event.isError) initialWrite = false;
+    if (event.toolName === "write" && !event.isError && initialWrite) {
+      initialWrite = false;
+      pi.sendUserMessage(${JSON.stringify(`Additional requirement: also write ${queuedFile} containing export const queued = true; before finishing. This supersedes the earlier single-file restriction. Keep copyReport unchanged until Abide requests repair.`)}, {deliverAs:"steer"});
+    }
   });
   pi.on("agent_before_settle", (event) => {
     if (event.entries.some(x=>x.type==="custom_message"&&x.customType==="abide-repair")) repairAllowed = true;
@@ -106,7 +117,8 @@ export default function(pi) {
           "--no-prompt-templates",
           "--no-themes",
           "--no-context-files",
-          "--no-session",
+          "--session-dir",
+          path.join(dir, "pi-sessions"),
           "--tools",
           "read,write,edit",
           "--thinking",
@@ -161,7 +173,31 @@ export default function(pi) {
       expect(checks[0]?.promptId).toBeTypeOf("string");
       expect(new Set(checks.map((check) => check.promptId)).size).toBe(1);
       expect(checks[1]?.blocked).toBe(false);
+      expect(checks[0]?.verdicts.find((verdict) => verdict.ruleId === "scope-creep")?.band).toBe(
+        "clear",
+      );
+      expect(readFileSync(path.join(repo, queuedFile), "utf8")).toContain("queued = true");
       expect(readFileSync(path.join(repo, file), "utf8")).not.toContain("copyReport");
+      const replay = piSessionsFor(repo, path.join(dir, "pi-sessions"));
+      expect(replay).toHaveLength(1);
+      expect(replay[0]?.turns.flatMap((turn) => turn.edits).length).toBeGreaterThanOrEqual(3);
+      const replayCommand = await exec(
+        process.execPath,
+        [bin, "replay", "pi", path.join(dir, "pi-sessions"), "--repo", repo, "--json"],
+        { cwd: repo, env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 },
+      );
+      const replayReport = z
+        .object({ host: z.literal("pi"), sessions: z.number(), edits: z.number() })
+        .parse(JSON.parse(replayCommand.stdout));
+      expect(replayReport.sessions).toBe(1);
+      expect(replayReport.edits).toBeGreaterThanOrEqual(3);
+      await exec(process.execPath, [bin, "uninstall", "pi", "--project"], {
+        cwd: repo,
+        env,
+        timeout: 15_000,
+      });
+      expect(existsSync(extension)).toBe(false);
+      expect(readFileSync(path.join(repo, file), "utf8")).toContain("verify");
       console.log(
         JSON.stringify({
           livePiRepair: true,

@@ -81,7 +81,8 @@ export const handlePostToolUse = async (raw: unknown): Promise<HookOutput> => {
     });
   }
 
-  const task = lastUserPrompt(input.transcript_path ?? undefined) ?? readPrompt(turn);
+  const task =
+    lastUserPrompt(input.transcript_path ?? undefined) ?? input.prompt ?? readPrompt(turn);
   let checked: Checked[];
   try {
     checked = await Promise.all(

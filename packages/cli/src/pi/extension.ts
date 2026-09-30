@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { assertNever, type HookOutput } from "@coldtea/abide-schema";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { MAX_STOP_CHECKS_PER_TURN } from "../lib/constants.js";
+import { MAX_TASK_CHARS } from "../lib/constants.js";
 import { createPiBridge } from "./bridge.js";
 import { createMutationTracker, mutationPayload, type MutationTracker } from "./mutations.js";
 
@@ -13,7 +13,8 @@ type Task =
       controller: AbortController;
       mutations: MutationTracker;
       followups: number;
-      stopChecks: number;
+      prompt: string;
+      lastPrompt: string;
     };
 type ActiveTask = Extract<Task, { kind: "active" }>;
 const createTaskId = (): string => randomUUID();
@@ -123,7 +124,8 @@ export default function abide(pi: ExtensionAPI): void {
         controller: new AbortController(),
         mutations: createMutationTracker(),
         followups: 0,
-        stopChecks: 0,
+        prompt: event.prompt.slice(0, MAX_TASK_CHARS),
+        lastPrompt: event.prompt.slice(0, MAX_TASK_CHARS),
       };
       task = current;
       const signal = signalFor(current, ctx);
@@ -138,6 +140,38 @@ export default function abide(pi: ExtensionAPI): void {
       return { message: { customType: "abide-compile", content, display: false } };
     } catch {
       reset();
+    }
+  });
+
+  pi.on("message_end", (event) => {
+    if (task.kind !== "active") return;
+    const message = event.message;
+    switch (message.role) {
+      case "user": {
+        const text = (
+          typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n")
+        ).slice(0, MAX_TASK_CHARS);
+        if (text !== task.lastPrompt) {
+          task.prompt = `${task.prompt}\n${text}`.slice(-MAX_TASK_CHARS);
+          task.lastPrompt = text;
+        }
+        return;
+      }
+      case "system":
+      case "assistant":
+      case "toolResult":
+      case "bashExecution":
+      case "custom":
+      case "branchSummary":
+      case "compactionSummary":
+        return;
+      default:
+        return assertNever(message);
     }
   });
 
@@ -177,7 +211,7 @@ export default function abide(pi: ExtensionAPI): void {
       if (!change) return;
       const output = await bridge.hook(
         "post-tool-use",
-        mutationPayload(change, current.identity, event.toolCallId),
+        mutationPayload(change, { ...current.identity, prompt: current.prompt }, event.toolCallId),
         signal,
       );
       if (!currentTask(current, signal)) return;
@@ -213,8 +247,6 @@ export default function abide(pi: ExtensionAPI): void {
         default:
           return assertNever(event.outcome);
       }
-      if (current.stopChecks >= MAX_STOP_CHECKS_PER_TURN) return;
-      current.stopChecks += 1;
       const signal = signalFor(current, ctx);
       const output = await bridge.hook(
         "stop",
@@ -222,6 +254,7 @@ export default function abide(pi: ExtensionAPI): void {
           ...current.identity,
           hook_event_name: "Stop",
           turn_state: "preserve",
+          prompt: current.prompt,
           stop_hook_active: current.followups > 0,
         },
         signal,

@@ -20,7 +20,7 @@ export const runJsonProcess = async (
     return undefined;
   }
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, ...args], { stdio: ["pipe", "pipe", "ignore"] });
+    const child = spawn("node", [script, ...args], { stdio: ["pipe", "pipe", "ignore"] });
     let settled = false;
     let bytes = 0;
     const chunks: Buffer[] = [];

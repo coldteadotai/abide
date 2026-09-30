@@ -16,6 +16,7 @@ import {
 } from "../lib/replay.js";
 import { codexSessionsDir, codexSessionsFor } from "../lib/replayCodex.js";
 import { opencodeDbPath, opencodeSessionsFor } from "../lib/replayOpencode.js";
+import { piSessionsDir, piSessionsFor } from "../lib/replayPi.js";
 import { say, usd } from "../lib/ui.js";
 import { Header } from "../ui/components/Header.js";
 import { showLive } from "../ui/render.js";
@@ -50,6 +51,10 @@ const sessionsFor = (host: Host, root: string, paths: readonly string[]): Replay
       return codexSessionsFor(root, paths[0] ?? codexSessionsDir());
     case "opencode":
       return opencodeSessionsFor(root, paths[0] ?? opencodeDbPath());
+    case "pi":
+      return (paths.length > 0 ? paths : [piSessionsDir()]).flatMap((target) =>
+        piSessionsFor(root, target),
+      );
     default:
       return assertNever(host);
   }
@@ -71,7 +76,7 @@ export const runReplay = async (argv: string[]): Promise<number> => {
   if (first === undefined)
     throw new AbideError(
       "HOST_UNKNOWN",
-      "name the agent whose sessions to replay: abide replay claude|codex|opencode [--repo <path>]",
+      "name the agent whose sessions to replay: abide replay claude|codex|opencode|pi [--repo <path>]",
     );
   const named = hostSchema.safeParse(first.toLowerCase());
   // no agent name: positionals are Claude Code transcripts

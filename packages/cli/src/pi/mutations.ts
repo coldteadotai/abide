@@ -1,20 +1,13 @@
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
 import { assertNever, postToolUseInputSchema, type PostToolUseInput } from "@coldtea/abide-schema";
 import { isExcludedPath } from "../lib/paths.js";
-import type { FileState } from "./protocol.js";
-
-const editSchema = z.object({
-  path: z.string(),
-  edits: z.array(z.object({ oldText: z.string(), newText: z.string() })).min(1),
-});
-const writeSchema = z.object({ path: z.string(), content: z.string() });
+import { piEditInputSchema, piWriteInputSchema, type FileState } from "./protocol.js";
 type Change = { file: string; before: string | null; after: string };
 type Pending = { file: string; before: FileState; tainted: boolean };
 
-const resolveToolPath = (input: string, cwd: string): string => {
+export const resolveToolPath = (input: string, cwd: string): string => {
   let file = input.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, "");
   if (
     process.platform === "win32" &&
@@ -51,7 +44,11 @@ export const createMutationTracker = (): MutationTracker => {
   return {
     begin(callId, toolName, input, cwd) {
       const schema =
-        toolName === "edit" ? editSchema : toolName === "write" ? writeSchema : undefined;
+        toolName === "edit"
+          ? piEditInputSchema
+          : toolName === "write"
+            ? piWriteInputSchema
+            : undefined;
       const parsed = schema?.safeParse(input);
       if (!parsed?.success) return undefined;
       const file = resolveToolPath(parsed.data.path, cwd);
@@ -109,7 +106,7 @@ export const createMutationTracker = (): MutationTracker => {
 
 export const mutationPayload = (
   change: Change,
-  identity: { session_id: string; prompt_id: string; cwd: string },
+  identity: { session_id: string; prompt_id: string; cwd: string; prompt?: string },
   callId: string,
 ): PostToolUseInput =>
   postToolUseInputSchema.parse({

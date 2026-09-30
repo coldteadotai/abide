@@ -256,7 +256,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
     });
   }
 
-  incrementStopChecks(dir);
+  if (input.turn_state === "finish") incrementStopChecks(dir);
   // Edit-phase rules rerun on files the edit checks did not see whole, and on
   // blocked ones: a block the agent ignored must not end the turn quietly.
   const checked = readChecked(dir);
@@ -273,7 +273,8 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
     );
   };
   const unchecked = bounded.filter((f) => !covered(f.file));
-  const task = lastUserPrompt(input.transcript_path ?? undefined) ?? readPrompt(dir);
+  const task =
+    lastUserPrompt(input.transcript_path ?? undefined) ?? input.prompt ?? readPrompt(dir);
   let outcome: CheckOutcome;
   try {
     const turnOutcome = await runCheck({
@@ -319,6 +320,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
   // Deleted files cannot be repaired.
   const repairable = files.filter((f) => existsSync(path.join(root, f)));
   const acting = repairable.length > 0 ? pairs("act") : [];
+  if (input.turn_state === "preserve" && acting.length > 0) incrementStopChecks(dir);
   const flagged = [...pairs("flag"), ...pairs("act").filter((p) => !acting.includes(p))];
 
   appendEvent(root, {

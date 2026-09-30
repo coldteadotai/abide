@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { handleTurnStart } from "../src/hooks/turnStart.js";
 import { handleStop, turnDiff } from "../src/hooks/stop.js";
-import { readBaseline, turnDir } from "../src/lib/session.js";
+import { readBaseline, stopCheckCount, turnDir } from "../src/lib/session.js";
+import { readEvents } from "../src/lib/events.js";
 
 const directories: string[] = [];
 const setup = async () => {
@@ -52,6 +54,26 @@ it("retains a clean Pi boundary's baseline so a later shell change is still visi
     kind: "silent",
   });
   expect(existsSync(dir)).toBe(false);
+});
+
+it("does not spend Pi's repair budget on nonblocking external continuations", async () => {
+  const { root, identity, dir } = await setup();
+  vi.stubEnv("TYPESAFE_AI_API_KEY", "");
+  vi.stubEnv("AI_GATEWAY_API_KEY", "");
+  mkdirSync(path.join(root, ".abide"));
+  copyFileSync(
+    fileURLToPath(new URL("../../../.abide/rubric.json", import.meta.url)),
+    path.join(root, ".abide", "rubric.json"),
+  );
+  for (let index = 0; index < 3; index += 1) {
+    writeFileSync(path.join(root, "shell.ts"), `export const shell = ${index};\n`);
+    await handleStop({ ...identity, hook_event_name: "Stop", turn_state: "preserve" });
+  }
+  expect(stopCheckCount(dir)).toBe(0);
+  expect(
+    readEvents(root).filter((event) => event.kind === "error" && event.phase === "turn"),
+  ).toHaveLength(3);
+  expect(readBaseline(dir)).toBeDefined();
 });
 
 it("keeps the existing cleanup behavior for hosts that do not request retention", async () => {
