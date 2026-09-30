@@ -1,6 +1,9 @@
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { createWriteTool } from "@earendil-works/pi-coding-agent";
+import { assertNever } from "@coldtea/abide-schema";
 import { afterAll, describe, expect, it } from "vitest";
 import { createPiBridge } from "../dist/pi/bridge.js";
 import { createMutationTracker, mutationPayload } from "../src/pi/mutations.js";
@@ -79,6 +82,55 @@ describe("Pi completed changes", () => {
     tracker.discard("x");
     expect(tracker.complete("x", { kind: "present", text: "x" })).toBeUndefined();
     tracker.clear();
+  });
+});
+
+describe("Pi path normalization", () => {
+  for (const variant of ["at", "home", "unicode", "url"] as const) {
+    it(`captures the file Pi actually writes for a ${variant} path`, async () => {
+      const cwd = mkdtempSync(path.join(homedir(), ".abide-pi-path-"));
+      const bridge = createPiBridge();
+      try {
+        const file = path.join(cwd, "two words.ts");
+        const inputPath = (() => {
+          switch (variant) {
+            case "at":
+              return "@two words.ts";
+            case "home":
+              return `~/${path.relative(homedir(), file).split(path.sep).join("/")}`;
+            case "unicode":
+              return "@two\u202fwords.ts";
+            case "url":
+              return pathToFileURL(file).href;
+            default:
+              return assertNever(variant);
+          }
+        })();
+        const input = { path: inputPath, content: "export const value = 1;\n" };
+        const tracker = createMutationTracker();
+        const pending = tracker.begin("actual-pi-write", "write", input, cwd);
+        expect(pending?.file).toBe(file);
+        if (!pending) throw new Error("Expected a tracked Pi write");
+        tracker.setBefore("actual-pi-write", await bridge.capture(pending.file));
+        await createWriteTool(cwd).execute("actual-pi-write", input, undefined, undefined);
+        const change = tracker.complete("actual-pi-write", await bridge.capture(pending.file));
+        expect(change).toEqual({ file, before: null, after: "export const value = 1;\n" });
+        expect(readFileSync(file, "utf8")).toBe("export const value = 1;\n");
+      } finally {
+        bridge.close();
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  }
+  it("excludes secret and Abide-owned paths after normalization", () => {
+    const tracker = createMutationTracker();
+    for (const file of [
+      "@.env.local",
+      "@.abide/rubric.json",
+      pathToFileURL(path.join(root, ".env")).href,
+    ]) {
+      expect(tracker.begin("excluded", "write", { path: file, content: "" }, root)).toBeUndefined();
+    }
   });
 });
 

@@ -1,4 +1,6 @@
+import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { assertNever, postToolUseInputSchema, type PostToolUseInput } from "@coldtea/abide-schema";
 import { isExcludedPath } from "../lib/paths.js";
@@ -11,6 +13,25 @@ const editSchema = z.object({
 const writeSchema = z.object({ path: z.string(), content: z.string() });
 type Change = { file: string; before: string | null; after: string };
 type Pending = { file: string; before: FileState; tainted: boolean };
+
+const resolveToolPath = (input: string, cwd: string): string => {
+  let file = input.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, "");
+  if (
+    process.platform === "win32" &&
+    file.startsWith("/") &&
+    !file.startsWith("//") &&
+    !file.includes("\\")
+  ) {
+    const drive = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i.exec(file);
+    if (drive?.[1]) file = `${drive[1].toUpperCase()}:\\${drive[2]?.replaceAll("/", "\\") ?? ""}`;
+  }
+  if (file === "~") file = homedir();
+  else if (file.startsWith("~/") || (process.platform === "win32" && file.startsWith("~\\")))
+    file = path.join(homedir(), file.slice(2));
+  if (file.startsWith("file://")) file = fileURLToPath(file);
+  return path.resolve(cwd, file);
+};
+
 export type MutationTracker = {
   begin(
     callId: string,
@@ -32,10 +53,16 @@ export const createMutationTracker = (): MutationTracker => {
       const schema =
         toolName === "edit" ? editSchema : toolName === "write" ? writeSchema : undefined;
       const parsed = schema?.safeParse(input);
-      if (!parsed?.success || parsed.data.path.startsWith("~")) return undefined;
-      const file = path.resolve(cwd, parsed.data.path);
+      if (!parsed?.success) return undefined;
+      const file = resolveToolPath(parsed.data.path, cwd);
       const relative = path.relative(cwd, file).split(path.sep).join("/");
-      if (relative.startsWith("../") || isExcludedPath(relative)) return undefined;
+      if (
+        relative === ".." ||
+        relative.startsWith("../") ||
+        path.isAbsolute(relative) ||
+        isExcludedPath(relative)
+      )
+        return undefined;
       const key = process.platform === "win32" ? file.toLowerCase() : file;
       let tainted = pending.has(callId);
       for (const entry of pending.values()) {

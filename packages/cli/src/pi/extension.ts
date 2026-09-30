@@ -208,11 +208,12 @@ export default function abide(pi: ExtensionAPI): void {
       advisory(output, ctx);
       switch (output.kind) {
         case "block":
-          if (current.followups >= 1 || !event.context.canContinue) {
+          if (current.followups >= 1) {
             notify(output.reason, ctx);
             return;
           }
           current.followups += 1;
+          // Pi validates continuation after applying this repair message.
           return {
             entries: [
               {
