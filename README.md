@@ -115,6 +115,10 @@ Every file is judged as if it had just been written. You get a table by rule and
 
 `report`, `check`, `audit`, `bench` and `calibrate` take `--json`.
 
+`compile` and `tune` use Claude Code by default, or Pi when Claude is unavailable. Choose explicitly with `abide compile --agent pi` or `abide tune --agent pi`; add `--global` to tune global rules. An explicitly selected agent never falls back to another. If neither is available, Abide prints the prompt for you to paste into an agent session. `--print` prints the prompt without starting an agent.
+
+Pi runs with `--print --no-session`, using its configured model and authentication. It does not save a session or override project trust: trust the repo in Pi first if compilation needs project settings or extensions. Claude Code uses its saved login without inheriting `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` from your shell.
+
 ## The rubric is yours
 
 `.abide/rubric.json` is a committed, readable file. Every verdict names a rule in it, and every rule quotes the line of your instruction file it came from. A wrong verdict is a rule you can rewrite.

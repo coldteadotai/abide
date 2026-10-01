@@ -5,8 +5,8 @@ import { palette } from "../theme.js";
 const COMMANDS: [string, string][] = [
   ["login", "store your TypeSafe or Vercel AI Gateway key, for you or for this repo, owner-only"],
   ["init [agent] [--project]", "install into claude, codex, opencode, pi, or every one found here"],
-  ["compile", "compile the rubric now, in a headless Claude Code turn"],
-  ["tune [--global]", "rewrite rules that never fire, with their statistics attached"],
+  ["compile [--agent claude|pi]", "compile the rubric now, in a headless agent turn"],
+  ["tune [--agent claude|pi]", "rewrite rules that never fire; --global tunes global rules"],
   ["rubric validate [--global]", "check .abide/rubric.json and fill in source hashes"],
   ["calibrate [--global]", "test every rule against this repo's recent history"],
   ["check [paths] [--all]", "check uncommitted changes the way the hooks would"],

@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
-import { AbideError, assertNever, type Rubric } from "@coldtea/abide-schema";
-import { claudeAvailable, runClaude } from "../lib/claude.js";
+import { AbideError, assertNever, type AbideErrorCode, type Rubric } from "@coldtea/abide-schema";
+import { parseCompileAgent, runHeadless, selectCompileAgent } from "../lib/headless.js";
+import { hostLabel } from "../lib/hosts.js";
 import { compilePrompt, type TuneStats } from "../lib/compilePrompt.js";
 import { readEvents } from "../lib/events.js";
 import { findLintConfigs } from "../lib/lintConfig.js";
@@ -42,7 +43,7 @@ const tuneStats = (
   return { rubric: read.rubric, stats };
 };
 
-/** Reads back the rubric Claude just wrote and boxes what to do with it. */
+/** Reads back the rubric the agent just wrote and boxes what to do with it. */
 const showCompiled = async (
   root: string,
   which: "project" | "global",
@@ -61,7 +62,7 @@ const showCompiled = async (
         Callout({
           tone: "warn",
           title: `The turn finished but ${label} was not written`,
-          children: "Start Claude Code in this repo and ask it to compile the rubric.",
+          children: "Start your agent in this repo and ask it to compile the rubric.",
         }),
       );
       return;
@@ -81,15 +82,17 @@ const showCompiled = async (
   }
 };
 
-/** Compiles now, in a headless Claude Code turn, instead of waiting for the next session. */
+/** Compiles now, in a headless agent turn, instead of waiting for the next session. */
 export const runCompile = async (argv: string[], tune: boolean): Promise<number> => {
   const { values } = parseArgs({
     args: argv,
     options: {
       print: { type: "boolean", default: false },
       global: { type: "boolean", default: false },
+      agent: { type: "string" },
     },
   });
+  const requestedAgent = parseCompileAgent(values.agent);
   const root = findRepoRoot(process.cwd());
   const plan = planCompile(root);
   if (plan.invalid.length > 0) {
@@ -151,28 +154,43 @@ export const runCompile = async (argv: string[], tune: boolean): Promise<number>
     say(prompt);
     return 0;
   }
-  if (!claudeAvailable()) {
+  const agent = selectCompileAgent(requestedAgent);
+  if (agent === undefined) {
     await showStatic(
       Callout({
         tone: "warn",
-        title: "claude is not on PATH. Paste this into a Claude Code session in this repo:",
+        title: "Neither claude nor pi is available. Paste this into an agent session in this repo:",
       }),
     );
     say(prompt);
     return 0;
+  }
+  let authenticationNote: string;
+  let failureCode: AbideErrorCode;
+  switch (agent) {
+    case "claude":
+      authenticationNote = "This runs on your subscription.";
+      failureCode = "CLAUDE_UNAVAILABLE";
+      break;
+    case "pi":
+      authenticationNote = "This uses your Pi model and authentication settings.";
+      failureCode = "HEADLESS_UNAVAILABLE";
+      break;
+    default:
+      return assertNever(agent);
   }
   await showStatic(
     Header({
       command: tune ? "tune" : "compile",
       where: root,
       note:
-        "Starting a headless Claude Code turn to " +
+        `Starting a headless ${hostLabel(agent)} turn to ` +
         (tune ? "rewrite the weak rules" : "compile the rubric") +
-        ". This runs on your subscription.",
+        `. ${authenticationNote}`,
     }),
   );
-  const code = await runClaude(root, prompt);
-  if (code !== 0) throw new AbideError("CLAUDE_UNAVAILABLE", `claude exited with ${code}`);
+  const code = await runHeadless(agent, root, prompt);
+  if (code !== 0) throw new AbideError(failureCode, `${agent} exited with ${code}`);
   for (const c of compiled) await showCompiled(root, c.which, c.file);
   return 0;
 };
