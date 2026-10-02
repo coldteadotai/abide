@@ -1,5 +1,5 @@
 import { DEFAULT_THRESHOLDS, type Rubric, type Thresholds } from "@coldtea/abide-schema";
-import { globalRubricPath, rubricPath } from "./paths.js";
+import { globalRubricPath, homeDir, rubricPath } from "./paths.js";
 import { mergeRules, readRubric, type MergedRule } from "./rubricFile.js";
 
 export type LoadedRules = {
@@ -32,7 +32,7 @@ export const loadRules = (root: string): LoadedRules => {
   return {
     project,
     global,
-    rules: mergeRules(project, global),
+    rules: mergeRules(project, global, root, homeDir()),
     thresholds: project?.thresholds ?? global?.thresholds ?? DEFAULT_THRESHOLDS,
     problems,
   };

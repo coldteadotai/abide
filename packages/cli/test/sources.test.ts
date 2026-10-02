@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
+import { createSourceSha, type Rubric, type Rule } from "@coldtea/abide-schema";
 import {
   checkStaleness,
   discoverGlobalSources,
@@ -115,8 +115,51 @@ describe("merging", () => {
         },
       ],
     });
-    const merged = mergeRules(mk("project"), mk("global"));
+    const merged = mergeRules(mk("project"), mk("global"), "/repo", "/home/u");
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({ text: "project", origin: "project" });
+  });
+
+  it("drops a global rule that names a different repo", () => {
+    const mk = (repos?: string[]): Rubric => ({
+      version: 1,
+      compiledAt: "x",
+      sources: [],
+      rules: [
+        {
+          id: "scoped-to-api",
+          text: "t",
+          source: { path: "AGENTS.md" },
+          status: "active",
+          check: { type: "lint", how: "x" },
+          ...(repos === undefined ? {} : { repos }),
+        },
+      ],
+    });
+    const at = (root: string, repo: string): string[] =>
+      mergeRules(undefined, mk([repo]), root, "/Users/u").map((r) => r.id);
+    expect(at("/Users/u/workspace/api", "~/workspace/api")).toEqual(["scoped-to-api"]);
+    expect(at("/Users/u/workspace/web", "~/workspace/api")).toEqual([]);
+    expect(mergeRules(undefined, mk(), "/Users/u/workspace/web", "/Users/u")).toHaveLength(1);
+  });
+
+  it("drops also a project rule that names another repo", () => {
+    const rule = (repos: string[]): Rule => ({
+      id: "r",
+      text: "t",
+      source: { path: "AGENTS.md" },
+      status: "active",
+      check: { type: "lint", how: "x" },
+      repos,
+    });
+    const rubric = (repos: string[]): Rubric => ({
+      version: 1,
+      compiledAt: "x",
+      sources: [],
+      rules: [rule(repos)],
+    });
+    expect(
+      mergeRules(rubric(["~/elsewhere"]), undefined, "/Users/u/workspace/api", "/Users/u"),
+    ).toEqual([]);
   });
 });
