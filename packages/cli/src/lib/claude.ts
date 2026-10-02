@@ -13,6 +13,11 @@ export const runClaude = (root: string, prompt: string): Promise<number> =>
       globalAbideDir(),
       ...discoverGlobalSources().map((s) => path.dirname(s.absolute)),
     ];
+    const env = {
+      ...process.env,
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_AUTH_TOKEN: undefined,
+    };
     const child = spawn(
       "claude",
       [
@@ -28,7 +33,7 @@ export const runClaude = (root: string, prompt: string): Promise<number> =>
         "--output-format",
         "text",
       ],
-      { cwd: root, stdio: "inherit" },
+      { cwd: root, stdio: "inherit", env },
     );
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));

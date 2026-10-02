@@ -1,7 +1,7 @@
 import { readdirSync, existsSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
-import { homeDir, resolveSourcePath, toSourcePath } from "./paths.js";
+import { homeDir, piAgentDir, resolveSourcePath, toSourcePath } from "./paths.js";
 import { readRegularFile } from "./regularFile.js";
 
 export type SourceCandidate = {
@@ -15,8 +15,29 @@ export type SourceCandidate = {
   origin: "root" | "nested" | "global" | "contributing";
 };
 
-const ROOT_NAMES = ["AGENTS.md", "CLAUDE.md", ".cursorrules"];
-const NESTED_NAMES = ["AGENTS.md", "CLAUDE.md"];
+const CONTEXT_NAMES = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+const contextNames = (dir: string): string[] => {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const findName = (wanted: string): string | undefined =>
+    entries.find(
+      (name) =>
+        name === wanted ||
+        (process.platform === "win32" && name.toLowerCase() === wanted.toLowerCase()),
+    );
+  return [
+    ...new Set(
+      ["AGENTS.override.md", ...CONTEXT_NAMES].flatMap((wanted) => {
+        const name = findName(wanted);
+        return name === undefined ? [] : [name];
+      }),
+    ),
+  ];
+};
 const GLOBAL_NAMES = ["~/.claude/CLAUDE.md", "~/.codex/AGENTS.md", "~/.config/opencode/AGENTS.md"];
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -48,7 +69,7 @@ const walkNested = (root: string, dir: string, depth: number, out: SourceCandida
   for (const entry of entries) {
     if (!entry.isDirectory() || SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
     const sub = path.join(dir, entry.name);
-    for (const name of NESTED_NAMES) {
+    for (const name of contextNames(sub)) {
       const file = path.join(sub, name);
       if (existsSync(file)) {
         const rel = toSourcePath(root, sub);
@@ -67,7 +88,7 @@ const walkNested = (root: string, dir: string, depth: number, out: SourceCandida
 
 export const discoverProjectSources = (root: string): SourceCandidate[] => {
   const found: SourceCandidate[] = [];
-  for (const name of ROOT_NAMES) {
+  for (const name of [...contextNames(root), ".cursorrules"]) {
     const file = path.join(root, name);
     if (existsSync(file)) {
       found.push({ path: name, absolute: file, scope: "**/*", required: true, origin: "root" });
@@ -87,13 +108,27 @@ export const discoverProjectSources = (root: string): SourceCandidate[] => {
   return found;
 };
 
-export const discoverGlobalSources = (): SourceCandidate[] =>
-  GLOBAL_NAMES.flatMap((p) => {
+export const discoverGlobalSources = (): SourceCandidate[] => {
+  const found: SourceCandidate[] = GLOBAL_NAMES.flatMap((p) => {
     const absolute = path.join(homeDir(), p.slice(2));
     return existsSync(absolute)
       ? [{ path: p, absolute, scope: "**/*", required: true, origin: "global" as const }]
       : [];
   });
+  const agentDir = piAgentDir();
+  const name = contextNames(agentDir)[0];
+  if (name !== undefined) {
+    const absolute = path.join(agentDir, name);
+    found.push({
+      path: toSourcePath(homeDir(), absolute),
+      absolute,
+      scope: "**/*",
+      required: true,
+      origin: "global",
+    });
+  }
+  return found;
+};
 
 export const hashFile = (absolute: string): string | undefined => {
   const bytes = readRegularFile(absolute);

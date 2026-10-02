@@ -43,6 +43,9 @@ export const findRepoRoot = (start: string): string => {
 export const expandHome = (p: string): string =>
   p === "~" ? homeDir() : p.startsWith("~/") ? path.join(homeDir(), p.slice(2)) : p;
 
+export const piAgentDir = (): string =>
+  path.resolve(expandHome(process.env.PI_CODING_AGENT_DIR || path.join(homeDir(), ".pi", "agent")));
+
 /** Absolute location of a rubric source path ("~/x" or repo-relative). */
 export const resolveSourcePath = (root: string, sourcePath: string): string =>
   sourcePath.startsWith("~") ? expandHome(sourcePath) : path.resolve(root, sourcePath);

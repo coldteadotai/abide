@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 const script = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -11,7 +11,13 @@ const script = path.resolve(
   "dist",
   "abide-hook.js",
 );
-const home = mkdtempSync(path.join(tmpdir(), "abide-home-"));
+const sandbox = mkdtempSync(path.join(tmpdir(), "abide-hook-"));
+const home = path.join(sandbox, "home");
+mkdirSync(home);
+// Reproduce an unrelated ancestor marker without relying on the machine's temp directory.
+mkdirSync(path.join(sandbox, ".git"));
+
+afterAll(() => rmSync(sandbox, { recursive: true, force: true }));
 
 const run = (name: string, input: string) =>
   spawnSync("node", [script, name], {
@@ -23,6 +29,12 @@ const run = (name: string, input: string) =>
 
 const git = (root: string, ...args: string[]): void => {
   execFileSync("git", args, { cwd: root });
+};
+
+const repoRoot = (): string => {
+  const root = mkdtempSync(path.join(sandbox, "repo-"));
+  git(root, "init", "-q", ".");
+  return root;
 };
 
 /** A repo whose *.ts files pass through a clean filter git runs in its own shell. */
@@ -38,7 +50,7 @@ const rubricWith = (rules: unknown[]): string =>
   JSON.stringify({ version: 1, compiledAt: "x", sources: [{ path: "AGENTS.md" }], rules });
 
 const repoWith = (rules: unknown[]): string => {
-  const root = mkdtempSync(path.join(tmpdir(), "abide-repo-"));
+  const root = repoRoot();
   writeFileSync(path.join(root, "AGENTS.md"), "- rule\n");
   mkdirSync(path.join(root, ".abide"));
   writeFileSync(path.join(root, ".abide", "rubric.json"), rubricWith(rules));
@@ -62,7 +74,7 @@ describe("the hook never breaks the agent (needs `pnpm build` first)", () => {
   }
 
   it("post-tool-use without a rubric or key is silent and exits 0", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "abide-repo-"));
+    const root = repoRoot();
     const payload = {
       session_id: "t",
       cwd: root,
@@ -202,7 +214,7 @@ describe("the hook never breaks the agent (needs `pnpm build` first)", () => {
     const lines = (prefix: string) =>
       Array.from({ length: 30_000 }, (_, i) => `${prefix}${i} ${Math.random()}`).join("\n");
     const base = { session_id: "t", prompt_id: "p", cwd: root };
-    // Not a git repository, so Stop takes the per-file path.
+    // No turn-start baseline, so Stop takes the per-file path.
     base.session_id = "incomplete-files";
     writeFileSync(path.join(root, "helper.ts"), "export const helper = 1;\n");
     for (const name of ["a.ts", "b.ts", "c.ts", "d.ts", "e.ts"]) {
@@ -305,7 +317,7 @@ describe("the hook never breaks the agent (needs `pnpm build` first)", () => {
   }, 60_000);
 
   it("session-start in a repo with an AGENTS.md and no rubric asks for a compile", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "abide-repo-"));
+    const root = repoRoot();
     writeFileSync(path.join(root, "AGENTS.md"), "- Use type, never interface\n");
     const r = run(
       "session-start",

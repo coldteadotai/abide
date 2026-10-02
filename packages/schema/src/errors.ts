@@ -9,6 +9,7 @@ export type AbideErrorCode =
   | "HOST_NOT_FOUND"
   | "GIT_UNAVAILABLE"
   | "CLAUDE_UNAVAILABLE"
+  | "HEADLESS_UNAVAILABLE"
   | "CHECK_TIMEOUT"
   | "CHECK_FAILED";
 

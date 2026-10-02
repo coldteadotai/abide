@@ -13,6 +13,7 @@ const TITLES: Record<AbideErrorCode, string> = {
   SETTINGS_INVALID: "The settings file could not be changed",
   GIT_UNAVAILABLE: "Git history is not readable here",
   CLAUDE_UNAVAILABLE: "Claude Code did not finish the turn",
+  HEADLESS_UNAVAILABLE: "The headless agent could not run",
   HOST_UNKNOWN: "That is not an agent abide knows",
   HOST_NOT_FOUND: "No supported agent was found on this machine",
   CHECK_TIMEOUT: "Jev did not answer in time",

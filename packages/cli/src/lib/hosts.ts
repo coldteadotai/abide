@@ -4,7 +4,8 @@ import { AbideError, assertNever, HOSTS, hostSchema, type Host } from "@coldtea/
 import { findExecutable } from "./executable.js";
 import { installOpencodePlugin, uninstallOpencodePlugin } from "./opencodePlugin.js";
 import { hookScriptPath } from "./packageRoot.js";
-import { homeDir } from "./paths.js";
+import { homeDir, piAgentDir } from "./paths.js";
+import { installPiExtension, uninstallPiExtension } from "./piExtension.js";
 import { hookSpecs, installHooks, uninstallHooks } from "./settings.js";
 
 export const hostLabel = (host: Host): string => {
@@ -15,6 +16,8 @@ export const hostLabel = (host: Host): string => {
       return "Codex";
     case "opencode":
       return "OpenCode";
+    case "pi":
+      return "Pi";
     default:
       return assertNever(host);
   }
@@ -37,6 +40,8 @@ export const hostPresent = (host: Host): boolean => {
       return existsSync(path.join(homeDir(), ".codex")) || onPath("codex");
     case "opencode":
       return existsSync(path.join(homeDir(), ".config", "opencode")) || onPath("opencode");
+    case "pi":
+      return existsSync(piAgentDir()) || onPath("pi");
     default:
       return assertNever(host);
   }
@@ -63,6 +68,10 @@ export const installTarget = (host: Host, root: string, project: boolean): strin
       return project
         ? path.join(root, ".opencode", "plugins", "abide.js")
         : path.join(homeDir(), ".config", "opencode", "plugins", "abide.js");
+    case "pi":
+      return project
+        ? path.join(root, ".pi", "extensions", "abide.js")
+        : path.join(piAgentDir(), "extensions", "abide.js");
     default:
       return assertNever(host);
   }
@@ -92,6 +101,16 @@ export const installHost = (host: Host, root: string, project: boolean): Install
     case "opencode":
       installOpencodePlugin(target);
       return { host, target, what: "plugin written; OpenCode loads it at the next start" };
+    case "pi":
+      installPiExtension(target);
+      return {
+        host,
+        target,
+        what: "extension written; Pi loads it at the next start",
+        afterwards: project
+          ? "Pi asks to trust project extensions; approve this repo before loading Abide."
+          : "Restart Pi, or use /reload, to load Abide.",
+      };
     default:
       return assertNever(host);
   }
@@ -105,6 +124,8 @@ export const uninstallHost = (host: Host, root: string, project: boolean): numbe
       return uninstallHooks(target);
     case "opencode":
       return uninstallOpencodePlugin(target) ? 1 : 0;
+    case "pi":
+      return uninstallPiExtension(target) ? 1 : 0;
     default:
       return assertNever(host);
   }

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertNever,
   createBlobId,
   isAbideError,
   stopInputSchema,
@@ -182,13 +183,23 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
   const parsed = stopInputSchema.safeParse(raw);
   if (!parsed.success) return { kind: "silent" };
   const input = parsed.data;
+  const dir = turnDir(input.session_id, turnIdOf(input));
+  switch (input.turn_state) {
+    case "clear":
+      clearTurn(dir);
+      return { kind: "silent" };
+    case "finish":
+    case "preserve":
+      break;
+    default:
+      return assertNever(input.turn_state);
+  }
   const started = performance.now();
   const at = new Date().toISOString();
   const root = findRepoRoot(input.cwd);
-  const dir = turnDir(input.session_id, turnIdOf(input));
 
   const finish = (output: HookOutput): HookOutput => {
-    if (output.kind !== "block") clearTurn(dir);
+    if (output.kind !== "block" && input.turn_state === "finish") clearTurn(dir);
     return output;
   };
 
@@ -245,7 +256,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
     });
   }
 
-  incrementStopChecks(dir);
+  if (input.turn_state === "finish") incrementStopChecks(dir);
   // Edit-phase rules rerun on files the edit checks did not see whole, and on
   // blocked ones: a block the agent ignored must not end the turn quietly.
   const checked = readChecked(dir);
@@ -262,7 +273,8 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
     );
   };
   const unchecked = bounded.filter((f) => !covered(f.file));
-  const task = lastUserPrompt(input.transcript_path ?? undefined) ?? readPrompt(dir);
+  const task =
+    lastUserPrompt(input.transcript_path ?? undefined) ?? input.prompt ?? readPrompt(dir);
   let outcome: CheckOutcome;
   try {
     const turnOutcome = await runCheck({
@@ -308,6 +320,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
   // Deleted files cannot be repaired.
   const repairable = files.filter((f) => existsSync(path.join(root, f)));
   const acting = repairable.length > 0 ? pairs("act") : [];
+  if (input.turn_state === "preserve" && acting.length > 0) incrementStopChecks(dir);
   const flagged = [...pairs("flag"), ...pairs("act").filter((p) => !acting.includes(p))];
 
   appendEvent(root, {
