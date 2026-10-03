@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   postToolUseInputSchema,
@@ -13,6 +12,7 @@ import { EDIT_CHECK_TIMEOUT_MS, MAX_TASK_CHARS, TURN_CHECK_TIMEOUT_MS } from "./
 import { boundState, editsFromPostToolUse } from "./diff.js";
 import type { FileDiff } from "./git.js";
 import { findRepoRoot, isExcludedPath, relativeToRoot } from "./paths.js";
+import { readSessionLines } from "./replayJsonl.js";
 
 /**
  * A past coding session, read back from the host's transcript, so every edit
@@ -46,7 +46,7 @@ const promptText = (content: unknown): string | undefined => {
   return parts.join("\n");
 };
 
-export const parseTranscript = (file: string): ReplaySession => {
+export const parseTranscript = async (file: string): Promise<ReplaySession> => {
   const turns: ReplayTurn[] = [];
   const uses = new Map<string, ToolUse>();
   let cwd: string | undefined;
@@ -58,7 +58,7 @@ export const parseTranscript = (file: string): ReplaySession => {
     turns.push(first);
     return first;
   };
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for await (const line of readSessionLines(file, () => cwd)) {
     if (line.trim() === "") continue;
     let entry: Record<string, unknown> | undefined;
     try {

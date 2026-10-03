@@ -5,11 +5,13 @@ import { Columns } from "../components/Columns.js";
 import { Header } from "../components/Header.js";
 import { Section } from "../components/Section.js";
 import { glyph, palette } from "../theme.js";
+import type { SkippedReplaySession } from "../../lib/replayCollection.js";
 
 export type ReplayData = {
   root: string;
   host: string;
   sessions: number;
+  skippedSessions: SkippedReplaySession[];
   edits: number;
   result: ReplayResult;
   drift: DriftRow[];
@@ -26,6 +28,7 @@ export function ReplayView({ data }: { data: ReplayData }) {
   const failed = data.result.edits.filter((e) => e.error !== undefined);
   const brokenTurns = data.result.turns.filter((t) => t.verdicts.some((v) => v.band === "act"));
   const rows = data.tallies.filter((t) => t.broken + t.flagged > 0);
+  const noEditsJudged = judged.length === 0 && data.skippedSessions.length > 0;
   return (
     <Box flexDirection="column">
       <Header
@@ -58,8 +61,11 @@ export function ReplayView({ data }: { data: ReplayData }) {
         aside={rows.length === 0 ? "nothing fired" : `${rows.length} rules fired`}
       >
         {rows.length === 0 ? (
-          <Text color={palette.sage}>
-            {glyph.check} No edit or turn broke a rule above the act line.
+          <Text color={noEditsJudged ? palette.amber : palette.sage}>
+            {noEditsJudged ? glyph.dot : glyph.check}{" "}
+            {noEditsJudged
+              ? "No edits were judged"
+              : "No edit or turn broke a rule above the act line."}
           </Text>
         ) : (
           <Columns
@@ -89,6 +95,13 @@ export function ReplayView({ data }: { data: ReplayData }) {
       {failed.length > 0 ? (
         <Text color={palette.amber}>
           {failed.length} edits could not be judged: {failed[0]?.error}
+        </Text>
+      ) : null}
+      {data.skippedSessions.length > 0 ? (
+        <Text color={palette.amber}>
+          Skipped {data.skippedSessions.length}{" "}
+          {data.skippedSessions.length === 1 ? "session" : "sessions"}. Results cover only the
+          sessions that could be read.
         </Text>
       ) : null}
       <Text color={palette.ash}>

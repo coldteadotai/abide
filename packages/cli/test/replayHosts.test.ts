@@ -8,7 +8,7 @@ import { opencodeSessionsFromRows } from "../src/lib/replayOpencode.js";
 const line = (entry: unknown): string => JSON.stringify(entry);
 
 describe("replay from Codex rollouts", () => {
-  it("reads prompts and applied patches, skips injected context and failed patches", () => {
+  it("reads prompts and applied patches, skips injected context and failed patches", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "abide-codex-"));
     const repo = "/r/app";
     const file = path.join(dir, "2026", "09", "18", "rollout-2026-09-18T10-00-00-abc.jsonl");
@@ -65,15 +65,15 @@ describe("replay from Codex rollouts", () => {
         "",
       ].join("\n"),
     );
-    const session = parseCodexRollout(file);
+    const session = await parseCodexRollout(file);
     expect(session.cwd).toBe(repo);
     expect(session.turns.map((t) => [t.index, t.prompt, t.edits.length])).toEqual([
       [1, "add a logout route", 1],
       [2, "now tests", 1],
     ]);
     expect(session.turns[0]?.edits[0]?.input.tool_name).toBe("apply_patch");
-    expect(codexSessionsFor(repo, dir)).toHaveLength(1);
-    expect(codexSessionsFor("/elsewhere", dir)).toHaveLength(0);
+    expect((await codexSessionsFor(repo, dir)).sessions).toHaveLength(1);
+    expect((await codexSessionsFor("/elsewhere", dir)).sessions).toHaveLength(0);
   });
 });
 
