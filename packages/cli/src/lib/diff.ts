@@ -169,6 +169,31 @@ export const editsFromPostToolUse = (input: PostToolUseInput): EditHunk[] => {
   }
 };
 
+/** Files an apply_patch deleted or moved away, so Stop can count them as this session's. */
+export const removedByPatch = (input: PostToolUseInput): string[] => {
+  switch (input.tool_name) {
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+      return [];
+    case "apply_patch":
+      return parseApplyPatch(input.tool_input.command).flatMap((file): string[] => {
+        switch (file.kind) {
+          case "add":
+            return [];
+          case "update":
+            return file.movedTo === undefined ? [] : [path.resolve(input.cwd, file.path)];
+          case "delete":
+            return [path.resolve(input.cwd, file.path)];
+          default:
+            return assertNever(file);
+        }
+      });
+    default:
+      return assertNever(input);
+  }
+};
+
 /** Undefined when the diff could not be computed within the time a hook may spend on it. */
 export const unifiedDiff = (
   relativePath: string,

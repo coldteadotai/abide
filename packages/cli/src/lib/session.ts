@@ -10,8 +10,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { MAX_TASK_CHARS, SESSION_STATE_MAX_AGE_MS } from "./constants.js";
-import { sessionsDir } from "./paths.js";
+import { MAX_TASK_CHARS, OPEN_TURN_MAX_AGE_MS, SESSION_STATE_MAX_AGE_MS } from "./constants.js";
+import { physicalPath, sessionsDir } from "./paths.js";
 
 /**
  * Turn state on disk, one directory per session and prompt, written as
@@ -73,6 +73,26 @@ export const recordFileStart = (
 ): void => {
   const record: FileStart = { path: absolutePath, original };
   createOnce(path.join(dir, "files", `${shortHash(absolutePath)}.json`), JSON.stringify(record));
+  // Resolved now: the symlink may point elsewhere by Stop.
+  const physical = physicalPath(absolutePath);
+  createOnce(path.join(dir, "touched", shortHash(physical)), physical);
+};
+
+/** Files this session's edit tools reached, symlinks resolved at edit time. */
+export const readTouched = (dir: string): string[] => {
+  const touched: string[] = [];
+  try {
+    for (const name of readdirSync(path.join(dir, "touched"))) {
+      try {
+        touched.push(readFileSync(path.join(dir, "touched", name), "utf8"));
+      } catch {
+        // being written by the other hook
+      }
+    }
+  } catch {
+    // no edits this turn
+  }
+  return touched;
 };
 
 const readRecords = <T>(dir: string, schema: z.ZodType<T>): T[] => {
@@ -213,6 +233,59 @@ export const readTurnRoot = (dir: string): string | undefined => {
     return undefined;
   }
 };
+
+const turnStartedAt = (dir: string): number | undefined => {
+  try {
+    return statSync(path.join(dir, "root")).mtimeMs;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Only a session's newest turn can be open: a new turn ends the last, even without a Stop. */
+export const openTurnsIn = (root: string, sessionId: string, now = Date.now()): string[] => {
+  let sessions: string[];
+  try {
+    sessions = readdirSync(sessionsDir());
+  } catch {
+    return [];
+  }
+  const here = physicalPath(root);
+  const open: string[] = [];
+  for (const session of sessions) {
+    if (session === safe(sessionId)) continue;
+    const sessionPath = path.join(sessionsDir(), session);
+    let turns: string[];
+    try {
+      // A new turn directory bumps its session directory's mtime.
+      if (now - statSync(sessionPath).mtimeMs > OPEN_TURN_MAX_AGE_MS) continue;
+      turns = readdirSync(sessionPath);
+    } catch {
+      continue;
+    }
+    let newest: { dir: string; at: number } | undefined;
+    for (const turn of turns) {
+      const dir = path.join(sessionPath, turn);
+      const at = turnStartedAt(dir);
+      if (at !== undefined && (newest === undefined || at > newest.at)) newest = { dir, at };
+    }
+    if (newest === undefined || now - newest.at > OPEN_TURN_MAX_AGE_MS) continue;
+    const there = readTurnRoot(newest.dir);
+    if (there !== undefined && physicalPath(there) === here) open.push(newest.dir);
+  }
+  return open;
+};
+
+/** Never creates the directory, so a turn that ended stays gone. */
+export const markShared = (dir: string): void => {
+  try {
+    writeFileSync(path.join(dir, "shared"), "", { flag: "wx", mode: 0o600 });
+  } catch {
+    // already marked, or the turn ended
+  }
+};
+
+export const isShared = (dir: string): boolean => existsSync(path.join(dir, "shared"));
 
 export const createTurnDiffKey = (fileDiffs: readonly { file: string; text: string }[]): string =>
   shortHash(JSON.stringify(fileDiffs.map((f) => [f.file, f.text])));

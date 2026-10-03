@@ -6,6 +6,8 @@ import { findRepoRoot } from "../lib/paths.js";
 import {
   clearTurn,
   markBaseline,
+  markShared,
+  openTurnsIn,
   turnDir,
   writeBaseline,
   writePrompt,
@@ -33,6 +35,11 @@ export const handleTurnStart = async (raw: unknown): Promise<HookOutput> => {
   // Written before the attempt: a hook that dies mid-snapshot leaves "pending"
   // behind, and the Stop check reads that as a turn it cannot see whole.
   markBaseline(dir, "pending");
+  // Before the search, so of two turns starting at once, the later one finds the other.
+  writeTurnRoot(dir, root);
+  const open = openTurnsIn(root, input.session_id);
+  for (const other of open) markShared(other);
+  if (open.length > 0) markShared(dir);
   const startedAt = Math.floor(Date.now() / 1000);
   const deadline = performance.now() + TURN_START_TIMEOUT_MS;
   const head = headCommit(root, TURN_START_TIMEOUT_MS);
@@ -46,7 +53,6 @@ export const handleTurnStart = async (raw: unknown): Promise<HookOutput> => {
     return { kind: "silent" };
   }
   writeBaseline(dir, tree);
-  writeTurnRoot(dir, root);
   if (head !== undefined) writeTurnHead(dir, { commit: head, startedAt });
   markBaseline(dir, "ok");
   return { kind: "silent" };
