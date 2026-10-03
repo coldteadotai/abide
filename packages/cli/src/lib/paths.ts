@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import picomatch from "picomatch";
@@ -12,6 +12,19 @@ export const sessionsDir = (): string => path.join(globalAbideDir(), "sessions")
 export const abideDir = (root: string): string => path.join(root, ".abide");
 export const rubricPath = (root: string): string => path.join(abideDir(root), "rubric.json");
 export const eventsPath = (root: string): string => path.join(abideDir(root), "events.jsonl");
+
+/** A deleted file resolves through its directory. */
+export const physicalPath = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    try {
+      return path.join(realpathSync(path.dirname(p)), path.basename(p));
+    } catch {
+      return p;
+    }
+  }
+};
 
 const isDir = (p: string): boolean => {
   try {
