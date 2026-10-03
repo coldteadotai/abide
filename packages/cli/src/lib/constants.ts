@@ -24,6 +24,8 @@ export const MAX_BLOCKS_PER_RULE_PER_TURN = 2;
 export const MAX_STOP_CHECKS_PER_TURN = 2;
 
 export const SESSION_STATE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long another session's turn counts as open. An interrupted turn never reaches Stop. */
+export const OPEN_TURN_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 /** How long a single git call may run before it is killed. Well under every hook budget. */
 export const GIT_TIMEOUT_MS = 5_000;

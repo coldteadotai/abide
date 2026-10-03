@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +32,7 @@ vi.mock("../src/lib/checkRunner.js", async (importActual) => {
 
 const { handleStop, turnDiff } = await import("../src/hooks/stop.js");
 const { handleTurnStart } = await import("../src/hooks/turnStart.js");
-const { turnDir } = await import("../src/lib/session.js");
+const { recordFileStart, turnDir } = await import("../src/lib/session.js");
 const { readEvents } = await import("../src/lib/events.js");
 
 const OLD = { GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z" };
@@ -257,5 +257,191 @@ describe("the Stop check", () => {
         file: "runner.ts",
       },
     ]);
+  });
+
+  describe("with another session in the same tree", () => {
+    const startAs = (root: string, session: string, prompt = "p") =>
+      handleTurnStart({
+        session_id: session,
+        prompt_id: prompt,
+        cwd: root,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "work",
+      });
+    const stopAs = (root: string, session: string, prompt = "p") =>
+      handleStop({
+        session_id: session,
+        prompt_id: prompt,
+        cwd: root,
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+      });
+    /** What Edit or Write records for this session. */
+    const editAs = (root: string, session: string, file: string, text: string) => {
+      recordFileStart(turnDir(session, "p"), path.join(root, file), null);
+      writeFileSync(path.join(root, file), text);
+    };
+    const age = (session: string, prompt: string, ms: number) => {
+      const then = new Date(Date.now() - ms);
+      const dir = turnDir(session, prompt);
+      utimesSync(path.join(dir, "root"), then, then);
+      utimesSync(path.dirname(dir), then, then);
+    };
+
+    beforeEach(() => {
+      verdicts.next = [{ ruleId: "comment-volume", probability: 0.9, band: "act" }];
+    });
+
+    it("does not judge a session that edited nothing for the other's edits", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "reviewer");
+      await startAs(root, "writer");
+      editAs(root, "writer", "mine.ts", "// says m\nexport const m = 1;\n");
+      expect(await stopAs(root, "reviewer")).toEqual({ kind: "silent" });
+      expect(verdicts.calls).toBe(0);
+    });
+
+    it("marks the turn that started first too, and judges only its own edits", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      editAs(root, "writer", "mine.ts", "// says m\nexport const m = 1;\n");
+      writeFileSync(path.join(root, "theirs.ts"), "// says t\nexport const t = 1;\n");
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["mine.ts"]);
+      const out = await stopAs(root, "writer");
+      expect(out.kind).toBe("block");
+      if (out.kind === "block") expect(out.reason).not.toContain("theirs.ts");
+    });
+
+    it("judges a patched file by what changed, not by all of its content", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      // apply_patch cannot say what an updated file held before.
+      recordFileStart(turnDir("writer", "p"), path.join(root, "src", "shared.ts"), null);
+      writeFileSync(path.join(root, "src", "shared.ts"), "export const a = 9;\n");
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["src/shared.ts"]);
+      const text = turn.kind === "complete" ? (turn.fileDiffs[0]?.text ?? "") : "";
+      expect(text).toContain("-export const a = 1;");
+      expect(text).toContain("+export const a = 9;");
+    });
+
+    it("keeps a file this session deleted, and drops one the other session deleted", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      recordFileStart(turnDir("writer", "p"), path.join(root, "src", "[id]", "gone.ts"), null);
+      rmSync(path.join(root, "src", "[id]", "gone.ts"));
+      rmSync(path.join(root, "src", "shared.ts"));
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["src/[id]/gone.ts"]);
+    });
+
+    it("sees the other session when it reached the repo through a symlink", async () => {
+      const root = repoWithUpstream();
+      const alias = `${root}-alias`;
+      symlinkSync(root, alias);
+      await startAs(root, "reviewer");
+      await startAs(alias, "writer");
+      editAs(alias, "writer", "mine.ts", "// says m\nexport const m = 1;\n");
+      expect(await stopAs(root, "reviewer")).toEqual({ kind: "silent" });
+      expect(verdicts.calls).toBe(0);
+    });
+
+    it("keeps an edit made through a symlinked file", async () => {
+      const root = repoWithUpstream();
+      symlinkSync("shared.ts", path.join(root, "src", "alias.ts"));
+      sh(root, "git add -A && git commit -qm alias");
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      editAs(root, "writer", "src/alias.ts", "export const a = 9;\n");
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["src/shared.ts"]);
+    });
+
+    it("keeps the file an alias reached when the edit was made, not what it points at later", async () => {
+      const root = repoWithUpstream();
+      symlinkSync("shared.ts", path.join(root, "src", "alias.ts"));
+      writeFileSync(path.join(root, "src", "theirs.ts"), "export const t = 1;\n");
+      sh(root, "git add -A && git commit -qm alias");
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      editAs(root, "writer", "src/alias.ts", "export const a = 9;\n");
+      rmSync(path.join(root, "src", "alias.ts"));
+      symlinkSync("theirs.ts", path.join(root, "src", "alias.ts"));
+      writeFileSync(path.join(root, "src", "theirs.ts"), "export const t = 2;\n");
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["src/alias.ts", "src/shared.ts"]);
+    });
+
+    it("keeps every file an alias reached, when the session retargets it between edits", async () => {
+      const root = repoWithUpstream();
+      symlinkSync("shared.ts", path.join(root, "src", "alias.ts"));
+      writeFileSync(path.join(root, "src", "second.ts"), "export const s = 1;\n");
+      sh(root, "git add -A && git commit -qm alias");
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      editAs(root, "writer", "src/alias.ts", "export const a = 9;\n");
+      rmSync(path.join(root, "src", "alias.ts"));
+      symlinkSync("second.ts", path.join(root, "src", "alias.ts"));
+      editAs(root, "writer", "src/alias.ts", "export const s = 2;\n");
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual([
+        "src/alias.ts",
+        "src/second.ts",
+        "src/shared.ts",
+      ]);
+    });
+
+    it("keeps a file this session deleted through a symlinked directory", async () => {
+      const root = repoWithUpstream();
+      symlinkSync("[id]", path.join(root, "src", "linked"));
+      sh(root, "git add -A && git commit -qm linked");
+      await startAs(root, "writer");
+      await startAs(root, "reviewer");
+      rmSync(path.join(root, "src", "linked", "gone.ts"));
+      recordFileStart(turnDir("writer", "p"), path.join(root, "src", "linked", "gone.ts"), null);
+      const turn = turnDiff(root, turnDir("writer", "p"));
+      expect(turn.kind === "complete" && turn.files).toEqual(["src/[id]/gone.ts"]);
+    });
+
+    it("still judges a lone session's shell edits", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "writer");
+      writeFileSync(path.join(root, "mine.ts"), "// says m\nexport const m = 1;\n");
+      expect((await stopAs(root, "writer")).kind).toBe("block");
+    });
+
+    it("ignores a turn left open past the age bound", async () => {
+      const root = repoWithUpstream();
+      await startAs(root, "interrupted");
+      age("interrupted", "p", 3 * 60 * 60 * 1000);
+      await startAs(root, "writer");
+      writeFileSync(path.join(root, "mine.ts"), "// says m\nexport const m = 1;\n");
+      expect((await stopAs(root, "writer")).kind).toBe("block");
+    });
+
+    it("ignores a session's older turn once it has started a newer one elsewhere", async () => {
+      const root = repoWithUpstream();
+      const elsewhere = repoWithUpstream();
+      await startAs(root, "other", "first");
+      age("other", "first", 60 * 1000);
+      await startAs(elsewhere, "other", "second");
+      await startAs(root, "writer");
+      writeFileSync(path.join(root, "mine.ts"), "// says m\nexport const m = 1;\n");
+      expect((await stopAs(root, "writer")).kind).toBe("block");
+    });
+
+    it("ignores a session working in another tree", async () => {
+      const root = repoWithUpstream();
+      const other = `${root}-worktree`;
+      sh(root, `git worktree add -q "${other}" upstream`);
+      await startAs(other, "other");
+      await startAs(root, "writer");
+      writeFileSync(path.join(root, "mine.ts"), "// says m\nexport const m = 1;\n");
+      expect((await stopAs(root, "writer")).kind).toBe("block");
+    });
   });
 });
