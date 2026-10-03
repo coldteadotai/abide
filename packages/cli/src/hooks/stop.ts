@@ -34,7 +34,7 @@ import { loadRules } from "../lib/loadRules.js";
 import { debug } from "../lib/output.js";
 import { findRepoRoot, isExcludedPath, physicalPath, relativeToRoot } from "../lib/paths.js";
 import { readRegularFile, readRegularText } from "../lib/regularFile.js";
-import { flagNotice, repairReason } from "../lib/reason.js";
+import { filesToRepair, flagNotice, repairReason } from "../lib/reason.js";
 import {
   clearTurn,
   createTurnDiffKey,
@@ -298,7 +298,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
   const unchecked = bounded.filter((f) => !covered(f.file));
   const task =
     lastUserPrompt(input.transcript_path ?? undefined) ?? input.prompt ?? readPrompt(dir);
-  let outcome: CheckOutcome;
+  let outcomes: CheckOutcome[];
   try {
     const turnOutcome = await runCheck({
       phase: "turn",
@@ -320,7 +320,7 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
         }),
       ),
     );
-    outcome = mergeOutcomes([turnOutcome, ...editOutcomes]);
+    outcomes = [turnOutcome, ...editOutcomes];
   } catch (error) {
     appendEvent(root, {
       kind: "error",
@@ -334,17 +334,23 @@ export const handleStop = async (raw: unknown): Promise<HookOutput> => {
     return finish({ kind: "silent" });
   }
 
+  const outcome = mergeOutcomes(outcomes);
   const byId = new Map(loaded.rules.map((r) => [r.id, r]));
-  const pairs = (band: Verdict["band"]): Pair[] =>
-    outcome.verdicts.flatMap((verdict) => {
+  const toPairs = (verdicts: readonly Verdict[]): Pair[] =>
+    verdicts.flatMap((verdict) => {
       const rule = byId.get(verdict.ruleId);
-      return rule !== undefined && verdict.band === band ? [{ rule, verdict }] : [];
+      return rule === undefined ? [] : [{ rule, verdict }];
     });
   // Deleted files cannot be repaired.
   const repairable = files.filter((f) => existsSync(path.join(root, f)));
-  const acting = repairable.length > 0 ? pairs("act") : [];
+  // Unmerged, so every broken file is named.
+  const acting = toPairs(outcomes.flatMap((o) => o.verdicts)).filter(
+    (p) => p.verdict.band === "act" && filesToRepair([p], repairable).length > 0,
+  );
   if (input.turn_state === "preserve" && acting.length > 0) incrementStopChecks(dir);
-  const flagged = [...pairs("flag"), ...pairs("act").filter((p) => !acting.includes(p))];
+  const flagged = toPairs(outcome.verdicts).filter(
+    (p) => p.verdict.band !== "clear" && !acting.some((a) => a.rule.id === p.rule.id),
+  );
 
   appendEvent(root, {
     kind: "check",

@@ -97,22 +97,24 @@ export const runCheck = async (request: CheckRequest): Promise<CheckOutcome> => 
 
   const started = performance.now();
   const results = await Promise.all(
-    groups.map((group) =>
-      checkWithModel(
+    groups.map(async (group) => {
+      const only = group.fileDiffs.length === 1 ? group.fileDiffs[0] : undefined;
+      const result = await checkWithModel(
         group.rules,
         {
           ...(request.task === undefined ? {} : { task: request.task }),
-          ...(request.phase === "edit" &&
-          group.fileDiffs.length === 1 &&
-          group.fileDiffs[0] !== undefined
-            ? { file: group.fileDiffs[0].file, diff: group.fileDiffs[0].text }
+          ...(request.phase === "edit" && only !== undefined
+            ? { file: only.file, diff: only.text }
             : { files: group.fileDiffs.map((f) => f.file), diff: renderFiles(group.fileDiffs) }),
         },
         request.thresholds,
         request.timeoutMs,
         request.retries ?? 0,
-      ),
-    ),
+      );
+      return only === undefined
+        ? result
+        : { ...result, verdicts: result.verdicts.map((v) => ({ ...v, file: only.file })) };
+    }),
   );
   return {
     verdicts: results.flatMap((r) => r.verdicts),

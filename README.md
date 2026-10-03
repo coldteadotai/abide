@@ -58,7 +58,7 @@ Jev changes the arithmetic. It is a decision model, so it answers a typed questi
 
 ```
 Abide: This edit appears to break a rule from this repository's instructions.
-- Rule "api-validation-uses-yup" from ~/.codex/AGENTS.md line 65: "When writing API endpoints, do NOT write input validations manually. Use Yup (with clear validation messages) + early return in the API handler". (0.86)
+- Rule "api-validation-uses-yup" from ~/.codex/AGENTS.md line 65: "When writing API endpoints, do NOT write input validations manually. Use Yup (with clear validation messages) + early return in the API handler". Scored 0.86 in apps/web/src/pages/api/logout.ts.
 Repair apps/web/src/pages/api/logout.ts now, then continue with the task.
 ```
 
