@@ -17,10 +17,11 @@ import {
 import { codexSessionsDir, codexSessionsFor } from "../lib/replayCodex.js";
 import { opencodeDbPath, opencodeSessionsFor } from "../lib/replayOpencode.js";
 import { piSessionsDir, piSessionsFor } from "../lib/replayPi.js";
-import { say, usd } from "../lib/ui.js";
+import { say, usd, warn } from "../lib/ui.js";
 import { Header } from "../ui/components/Header.js";
 import { showLive } from "../ui/render.js";
 import { ReplayView, type ReplayData } from "../ui/views/ReplayView.js";
+import { collectReplaySessions, type ReplayCollection } from "../lib/replayCollection.js";
 
 /** Claude Code names the transcript directory after the repo path. */
 export const claudeProjectDir = (root: string): string =>
@@ -35,29 +36,33 @@ const transcriptFiles = (target: string): string[] => {
     .sort();
 };
 
-const inside = (root: string, dir: string): boolean => {
-  const rel = path.relative(root, dir);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-};
-
-const sessionsFor = (host: Host, root: string, paths: readonly string[]): ReplaySession[] => {
+const sessionsFor = async (
+  host: Host,
+  root: string,
+  paths: readonly string[],
+): Promise<ReplayCollection> => {
+  let sessions: ReplaySession[];
   switch (host) {
     case "claude":
-      return (paths.length > 0 ? paths : [claudeProjectDir(root)])
-        .flatMap(transcriptFiles)
-        .map(parseTranscript)
-        .filter((s) => s.turns.length > 0 && inside(root, s.cwd));
+      return collectReplaySessions(
+        root,
+        (paths.length > 0 ? paths : [claudeProjectDir(root)]).flatMap(transcriptFiles),
+        parseTranscript,
+      );
     case "codex":
       return codexSessionsFor(root, paths[0] ?? codexSessionsDir());
     case "opencode":
-      return opencodeSessionsFor(root, paths[0] ?? opencodeDbPath());
+      sessions = opencodeSessionsFor(root, paths[0] ?? opencodeDbPath());
+      break;
     case "pi":
-      return (paths.length > 0 ? paths : [piSessionsDir()]).flatMap((target) =>
+      sessions = (paths.length > 0 ? paths : [piSessionsDir()]).flatMap((target) =>
         piSessionsFor(root, target),
       );
+      break;
     default:
       return assertNever(host);
   }
+  return { sessions, skippedSessions: [] };
 };
 
 export const runReplay = async (argv: string[]): Promise<number> => {
@@ -91,7 +96,12 @@ export const runReplay = async (argv: string[]): Promise<number> => {
       `no rubric in ${root} or ~/.abide; run abide compile there first`,
     );
   const cap = values["max-sessions"] === undefined ? Infinity : Number(values["max-sessions"]);
-  const sessions = sessionsFor(host, root, paths).slice(0, cap);
+  const collected = await sessionsFor(host, root, paths);
+  const sessions = collected.sessions.slice(0, cap);
+  const { skippedSessions } = collected;
+  for (const skipped of skippedSessions)
+    warn(`Skipped session ${JSON.stringify(skipped.file)}: ${skipped.reason} (${skipped.code})`);
+  const exitCode = skippedSessions.length > 0 && collected.sessions.length === 0 ? 1 : 0;
   const editCount = sessions.reduce(
     (n, s) => n + s.turns.reduce((m, t) => m + t.edits.length, 0),
     0,
@@ -112,6 +122,7 @@ export const runReplay = async (argv: string[]): Promise<number> => {
       root,
       host: hostLabel(host),
       sessions: sessions.length,
+      skippedSessions,
       edits: editCount,
       result,
       drift: driftByTurn(result.edits),
@@ -130,6 +141,7 @@ export const runReplay = async (argv: string[]): Promise<number> => {
         root,
         host,
         sessions: data.sessions,
+        skippedSessions: data.skippedSessions,
         edits: data.edits,
         spendUsd: data.spendUsd,
         elapsedMs: data.elapsedMs,
@@ -139,7 +151,7 @@ export const runReplay = async (argv: string[]): Promise<number> => {
         turnResults: data.result.turns,
       }),
     );
-    return 0;
+    return exitCode;
   }
   return showLive<ReplayData>({
     header: Header({
@@ -149,5 +161,6 @@ export const runReplay = async (argv: string[]): Promise<number> => {
     }),
     run,
     done: (data) => ReplayView({ data }),
+    code: () => exitCode,
   });
 };

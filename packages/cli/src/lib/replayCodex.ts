@@ -1,9 +1,11 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { postToolUseInputSchema } from "@coldtea/abide-schema";
 import { MAX_TASK_CHARS } from "./constants.js";
 import type { ReplaySession, ReplayTurn } from "./replay.js";
+import { readSessionLines } from "./replayJsonl.js";
+import { collectReplaySessions, type ReplayCollection } from "./replayCollection.js";
 
 /** One rollout file per session, one JSON object per line. An `apply_patch` call carries the same patch text the live hook receives. */
 export const codexSessionsDir = (): string => path.join(homedir(), ".codex", "sessions");
@@ -38,7 +40,7 @@ const promptOf = (payload: Record<string, unknown>): string | undefined => {
 
 const FAILED_OUTPUT = /^apply_patch (verification )?failed|^error/i;
 
-export const parseCodexRollout = (file: string): ReplaySession => {
+export const parseCodexRollout = async (file: string): Promise<ReplaySession> => {
   const turns: ReplayTurn[] = [];
   const pending = new Map<string, { turn: ReplayTurn; command: string }>();
   let cwd: string | undefined;
@@ -51,7 +53,7 @@ export const parseCodexRollout = (file: string): ReplaySession => {
     return first;
   };
   const sessionId = path.basename(file, ".jsonl");
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for await (const line of readSessionLines(file, () => cwd)) {
     if (line.trim() === "") continue;
     let entry: Record<string, unknown> | undefined;
     try {
@@ -118,13 +120,8 @@ const rolloutFiles = (dir: string): string[] => {
   });
 };
 
-const inside = (root: string, dir: string): boolean => {
-  const rel = path.relative(root, dir);
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-};
-
-export const codexSessionsFor = (root: string, dir = codexSessionsDir()): ReplaySession[] =>
-  rolloutFiles(dir)
-    .sort()
-    .map(parseCodexRollout)
-    .filter((s) => inside(root, s.cwd) && s.turns.length > 0);
+export const codexSessionsFor = (
+  root: string,
+  dir = codexSessionsDir(),
+): Promise<ReplayCollection> =>
+  collectReplaySessions(root, rolloutFiles(dir).sort(), parseCodexRollout);

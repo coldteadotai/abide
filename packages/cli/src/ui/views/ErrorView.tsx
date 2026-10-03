@@ -18,6 +18,8 @@ const TITLES: Record<AbideErrorCode, string> = {
   HOST_NOT_FOUND: "No supported agent was found on this machine",
   CHECK_TIMEOUT: "Jev did not answer in time",
   CHECK_FAILED: "Jev refused the check",
+  REPLAY_READ_FAILED: "The session file could not be read",
+  REPLAY_RECORD_TOO_LARGE: "A session record is too large to read safely",
 };
 
 export function ErrorView({ error }: { error: unknown }) {

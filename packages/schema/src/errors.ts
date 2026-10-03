@@ -11,6 +11,8 @@ export type AbideErrorCode =
   | "CLAUDE_UNAVAILABLE"
   | "HEADLESS_UNAVAILABLE"
   | "CHECK_TIMEOUT"
+  | "REPLAY_READ_FAILED"
+  | "REPLAY_RECORD_TOO_LARGE"
   | "CHECK_FAILED";
 
 export class AbideError extends Error {
@@ -24,3 +26,18 @@ export class AbideError extends Error {
 }
 
 export const isAbideError = (value: unknown): value is AbideError => value instanceof AbideError;
+
+export class ReplayReadError extends AbideError {
+  override readonly code: "REPLAY_READ_FAILED" | "REPLAY_RECORD_TOO_LARGE";
+  readonly cwd: string | undefined;
+
+  constructor(
+    code: ReplayReadError["code"],
+    message: string,
+    options?: { cause?: unknown; cwd?: string },
+  ) {
+    super(code, message, options);
+    this.code = code;
+    this.cwd = options?.cwd;
+  }
+}
