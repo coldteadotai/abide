@@ -11,6 +11,8 @@ export const verdictSchema = z.object({
   band: bandSchema,
   /** For choice and score answers, what the model picked. */
   answer: z.string().optional(),
+  /** Set only when judged on one file. */
+  file: z.string().optional(),
 });
 export type Verdict = z.infer<typeof verdictSchema>;
 

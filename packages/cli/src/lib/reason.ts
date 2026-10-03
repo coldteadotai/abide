@@ -1,4 +1,7 @@
 import type { Rule, Verdict } from "@coldtea/abide-schema";
+import { ruleAppliesTo } from "./scope.js";
+
+type Violation = { rule: Rule; verdict: Verdict };
 
 const where = (rule: Rule): string =>
   rule.source.line === undefined
@@ -10,37 +13,61 @@ const quote = (text: string): string => {
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}...` : trimmed;
 };
 
-/** One sentence per violation, naming the rule. Never the whole instruction file. */
+const blames = ({ rule, verdict }: Violation, file: string): boolean =>
+  verdict.file === undefined ? ruleAppliesTo(rule, file) : verdict.file === file;
+
+export const filesToRepair = (
+  violations: readonly Violation[],
+  files: readonly string[],
+): string[] => [...new Set(files)].filter((f) => violations.some((v) => blames(v, f)));
+
+const evidence = (rule: Rule, verdict: Verdict): string => {
+  const score = verdict.probability.toFixed(2);
+  const at = verdict.file === undefined ? "" : ` in ${verdict.file}`;
+  if (rule.check.type === "lint" && verdict.answer !== undefined)
+    return ` Matched${at}: ${verdict.answer}`;
+  if (verdict.answer !== undefined) return ` Judged${at}: ${verdict.answer} (${score}).`;
+  return verdict.file === undefined ? ` (${score})` : ` Scored ${score} in ${verdict.file}.`;
+};
+
+/** One line per broken rule. Never the whole instruction file. */
 export const repairReason = (
   phase: "edit" | "turn",
-  violations: readonly { rule: Rule; verdict: Verdict }[],
+  violations: readonly Violation[],
   files: readonly string[],
 ): string => {
-  const lines = violations.map(({ rule, verdict }) => {
-    const evidence =
-      rule.check.type === "lint" && verdict.answer !== undefined
-        ? ` Matched: ${verdict.answer}`
-        : verdict.answer !== undefined
-          ? ` Judged: ${verdict.answer} (${verdict.probability.toFixed(2)}).`
-          : ` (${verdict.probability.toFixed(2)})`;
-    return `Rule "${rule.id}" from ${where(rule)}: "${quote(rule.text)}".${evidence}`;
-  });
-  const subject = phase === "edit" ? "This edit" : "The changes in this turn";
-  const target = files.length === 1 ? files[0] : `${files.length} files (${files.join(", ")})`;
+  const byRule = new Map<string, { rule: Rule; verdicts: Verdict[] }>();
+  for (const { rule, verdict } of violations) {
+    const entry = byRule.get(rule.id) ?? { rule, verdicts: [] };
+    entry.verdicts.push(verdict);
+    byRule.set(rule.id, entry);
+  }
+  const lines = [...byRule.values()].map(
+    ({ rule, verdicts }) =>
+      `Rule "${rule.id}" from ${where(rule)}: "${quote(rule.text)}".${verdicts.map((v) => evidence(rule, v)).join("")}`,
+  );
+  const targets = filesToRepair(violations, files);
+  const subject = phase === "edit" ? "This edit appears" : "The changes in this turn appear";
+  const target =
+    targets.length === 1 ? targets[0] : `${targets.length} files (${targets.join(", ")})`;
   const ask =
     phase === "edit"
       ? `Repair ${target} now, then continue with the task.`
       : `Repair ${target} before you finish. Keep the fix to what the rule asks.`;
-  return `Abide: ${subject} appears to break ${lines.length === 1 ? "a rule" : `${lines.length} rules`} from this repository's instructions.\n${lines.map((l) => `- ${l}`).join("\n")}\n${ask}`;
+  return `Abide: ${subject} to break ${lines.length === 1 ? "a rule" : `${lines.length} rules`} from this repository's instructions.\n${lines.map((l) => `- ${l}`).join("\n")}\n${ask}`;
 };
 
 export const flagNotice = (
   phase: "edit" | "turn",
-  flagged: readonly { rule: Rule; verdict: Verdict }[],
+  flagged: readonly Violation[],
   files: readonly string[],
 ): string => {
   const list = flagged
-    .map(({ rule, verdict }) => `${rule.id} ${verdict.probability.toFixed(2)}`)
+    .map(
+      ({ rule, verdict }) =>
+        `${rule.id} ${verdict.probability.toFixed(2)}${verdict.file === undefined ? "" : ` in ${verdict.file}`}`,
+    )
     .join(", ");
-  return `Abide: uncertain about ${list} on ${files.join(", ")} (${phase}). Not sent to the agent. Details in .abide/events.jsonl.`;
+  const on = flagged.some((p) => p.verdict.file === undefined) ? ` on ${files.join(", ")}` : "";
+  return `Abide: uncertain about ${list}${on} (${phase}). Not sent to the agent. Details in .abide/events.jsonl.`;
 };

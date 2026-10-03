@@ -4,16 +4,28 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Verdict } from "@coldtea/abide-schema";
+import type { CheckRequest } from "../src/lib/checkRunner.js";
 
-const verdicts = vi.hoisted(() => ({ next: [] as Verdict[], calls: 0 }));
+const verdicts = vi.hoisted(() => ({
+  next: [] as Verdict[],
+  /** Overrides `next` per request. */
+  by: undefined as ((request: CheckRequest) => Verdict[]) | undefined,
+  calls: 0,
+}));
 
 vi.mock("../src/lib/checkRunner.js", async (importActual) => {
   const actual = await importActual<typeof import("../src/lib/checkRunner.js")>();
   return {
     ...actual,
-    runCheck: async () => {
+    runCheck: async (request: CheckRequest) => {
       verdicts.calls += 1;
-      return { verdicts: verdicts.next, modelRules: [], calls: 1, usage: {}, modelLatencyMs: 0 };
+      return {
+        verdicts: verdicts.by?.(request) ?? verdicts.next,
+        modelRules: [],
+        calls: 1,
+        usage: {},
+        modelLatencyMs: 0,
+      };
     },
   };
 });
@@ -21,6 +33,7 @@ vi.mock("../src/lib/checkRunner.js", async (importActual) => {
 const { handleStop, turnDiff } = await import("../src/hooks/stop.js");
 const { handleTurnStart } = await import("../src/hooks/turnStart.js");
 const { turnDir } = await import("../src/lib/session.js");
+const { readEvents } = await import("../src/lib/events.js");
 
 const OLD = { GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z" };
 
@@ -93,6 +106,7 @@ describe("the Stop check", () => {
   beforeEach(() => {
     process.env.ABIDE_HOME_DIR = mkdtempSync(path.join(tmpdir(), "abide-home-"));
     verdicts.next = [];
+    verdicts.by = undefined;
     verdicts.calls = 0;
   });
   afterEach(() => {
@@ -201,5 +215,47 @@ describe("the Stop check", () => {
       expect(out.reason).toContain("Repair mine.ts before");
       expect(out.reason).not.toContain("gone.ts");
     }
+  });
+
+  it("names only the file that broke an edit rule, out of every file the turn changed", async () => {
+    const root = repoWithUpstream();
+    writeFileSync(
+      path.join(root, ".abide", "rubric.json"),
+      JSON.stringify({
+        version: 1,
+        compiledAt: "x",
+        sources: [{ path: "AGENTS.md" }],
+        rules: [{ ...rule, when: "edit" }],
+      }),
+    );
+    await startTurn(root);
+    for (const name of ["a.ts", "runner.ts", "z.ts"])
+      writeFileSync(path.join(root, name), `export const ${name[0]} = 1;\n`);
+    verdicts.by = ({ phase, fileDiffs }) => {
+      const file = fileDiffs[0]?.file;
+      if (phase !== "edit" || file === undefined) return [];
+      return [
+        file === "runner.ts"
+          ? { ruleId: "comment-volume", probability: 0.8, band: "act", answer: "about half", file }
+          : { ruleId: "comment-volume", probability: 0.2, band: "clear", file },
+      ];
+    };
+    const out = await stop(root);
+    expect(out.kind).toBe("block");
+    if (out.kind === "block") {
+      expect(out.reason).toContain("Judged in runner.ts: about half (0.80).");
+      expect(out.reason).toContain("Repair runner.ts before you finish.");
+      expect(out.reason).not.toMatch(/a\.ts|z\.ts/);
+    }
+    const check = readEvents(root).find((e) => e.kind === "check");
+    expect(check?.kind === "check" && check.verdicts).toEqual([
+      {
+        ruleId: "comment-volume",
+        probability: 0.8,
+        band: "act",
+        answer: "about half",
+        file: "runner.ts",
+      },
+    ]);
   });
 });
