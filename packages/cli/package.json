@@ -1,6 +1,6 @@
 {
   "name": "@coldtea/abide",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Enforce your own AGENTS.md rules on every edit a coding agent makes.",
   "license": "MIT",
   "author": "Coldtea AI",
