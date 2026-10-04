@@ -63,17 +63,17 @@ export const listRepoFiles = (root: string, paths: readonly string[]): string[] 
   }
   return result.stdout
     .split("\0")
-    .filter((f) => f !== "" && !SKIP_FILE.test(f) && !isExcludedPath(f));
+    .filter((f) => f !== "" && !SKIP_FILE.test(f) && !isExcludedPath(f, root));
 };
 
 /** Real path of a file, or nothing if any link on the way leads out of the repo or to an excluded file. */
 const insideRepo = (root: string, file: string): string | undefined => {
-  if (isExcludedPath(file)) return undefined;
+  if (isExcludedPath(file, root)) return undefined;
   try {
     const base = realpathSync(root);
     const real = realpathSync(path.join(root, file));
     if (!real.startsWith(`${base}${path.sep}`)) return undefined;
-    return isExcludedPath(relativeToRoot(base, real)) ? undefined : real;
+    return isExcludedPath(relativeToRoot(base, real), root) ? undefined : real;
   } catch {
     return undefined;
   }

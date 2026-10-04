@@ -95,8 +95,8 @@ const gitTurnDiff = (root: string, dir: string, baseline: string): TurnDiff => {
   if (sinceHead === undefined) return incomplete("git could not diff against the new HEAD in time");
 
   const fileDiffs = [
-    ...splitDiff(patch).filter((f) => !brought.has(f.file)),
-    ...splitDiff(sinceHead).filter((f) => brought.has(f.file)),
+    ...splitDiff(patch, root).filter((f) => !brought.has(f.file)),
+    ...splitDiff(sinceHead, root).filter((f) => brought.has(f.file)),
   ];
   const files = fileDiffs.map((f) => f.file);
   const ownIds = blobIdsAt(
@@ -169,7 +169,7 @@ export const turnDiff = (root: string, dir: string): TurnDiff => {
   const startIds = new Map<string, string | null>();
   for (const start of readFileStarts(dir)) {
     const relative = relativeToRoot(root, start.path);
-    if (relative.startsWith("..") || isExcludedPath(relative)) continue;
+    if (relative.startsWith("..") || isExcludedPath(relative, root)) continue;
     const after = readRegularText(start.path) ?? null;
     if (after === null && existsSync(start.path)) {
       missing.push(relative);
@@ -181,7 +181,7 @@ export const turnDiff = (root: string, dir: string): TurnDiff => {
       missing.push(relative);
       continue;
     }
-    fileDiffs.push(...splitDiff(patch));
+    fileDiffs.push(...splitDiff(patch, root));
     startIds.set(relative, start.original === null ? null : createBlobId(start.original));
   }
   if (missing.length > 0) {

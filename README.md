@@ -130,6 +130,19 @@ Pi runs with `--print --no-session`, using its configured model and authenticati
 
 ![abide report](docs/images/report.svg)
 
+## Excluding files
+
+Put `.abideignore` at the repository root to skip files for every rule, even if Git tracks them:
+
+```text
+# Generated files
+**/_generated/**
+**/*.generated.ts
+next-env.d.ts
+```
+
+Each line is a repo-relative [picomatch glob](https://github.com/micromatch/picomatch#globbing-features), including dotfiles. Blank lines and lines starting with `#` are skipped. This is glob syntax, not full `.gitignore` syntax: `!` does not re-include files, and directory patterns need `/**` to match their contents. Abide skips invalid patterns and ignores missing, unreadable, non-regular, or larger-than-64-KiB ignore files. Secret files and `.abide/` stay excluded.
+
 ## Cost, privacy, safety
 
 - Changed lines go to TypeSafe under your key, and nowhere else. No server of ours is in the path.

@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNever, postToolUseInputSchema, type PostToolUseInput } from "@coldtea/abide-schema";
-import { isExcludedPath } from "../lib/paths.js";
+import { findRepoRoot, isExcludedPath, relativeToRoot } from "../lib/paths.js";
 import { piEditInputSchema, piWriteInputSchema, type FileState } from "./protocol.js";
 type Change = { file: string; before: string | null; after: string };
 type Pending = { file: string; before: FileState; tainted: boolean };
@@ -52,12 +52,13 @@ export const createMutationTracker = (): MutationTracker => {
       const parsed = schema?.safeParse(input);
       if (!parsed?.success) return undefined;
       const file = resolveToolPath(parsed.data.path, cwd);
+      const root = findRepoRoot(cwd);
       const relative = path.relative(cwd, file).split(path.sep).join("/");
       if (
         relative === ".." ||
         relative.startsWith("../") ||
         path.isAbsolute(relative) ||
-        isExcludedPath(relative)
+        isExcludedPath(relativeToRoot(root, file), root)
       )
         return undefined;
       const key = process.platform === "win32" ? file.toLowerCase() : file;

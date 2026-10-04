@@ -164,7 +164,7 @@ export const replaySessions = async (
     const name = path.basename(session.file, ".jsonl");
     for (const hunk of editsFromPostToolUse(edit.input)) {
       const relative = relativeToRoot(root, hunk.filePath);
-      if (relative.startsWith("..") || isExcludedPath(relative) || hunk.text === undefined)
+      if (relative.startsWith("..") || isExcludedPath(relative, root) || hunk.text === undefined)
         continue;
       const { text } = boundState(hunk.text);
       if (text.trim() === "") continue;
