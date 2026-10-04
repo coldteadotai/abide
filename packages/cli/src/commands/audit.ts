@@ -1,14 +1,14 @@
 import { parseArgs } from "node:util";
 import { AbideError } from "@coldtea/abide-schema";
-import { auditFiles, auditableFiles, listRepoFiles, tallyByRule } from "../lib/audit.js";
-import { isGitRepo } from "../lib/git.js";
-import { hasApiKey, NO_KEY_HINT } from "../lib/credentials.js";
-import { loadRules } from "../lib/loadRules.js";
-import { findRepoRoot } from "../lib/paths.js";
 import { say, usd } from "../lib/ui.js";
-import { Header } from "../ui/components/Header.js";
+import { isGitRepo } from "../lib/git.js";
 import { showLive } from "../ui/render.js";
+import { findRepoRoot } from "../lib/paths.js";
+import { loadRules } from "../lib/loadRules.js";
+import { Header } from "../ui/components/Header.js";
+import { hasApiKey, NO_KEY_HINT } from "../lib/credentials.js";
 import { AuditView, type AuditData } from "../ui/views/AuditView.js";
+import { auditFiles, auditableFiles, listRepoFiles, tallyByRule } from "../lib/audit.js";
 
 /** Judges every file in scope as if it had just been written, and reports what breaks which rule. */
 export const runAudit = async (argv: string[]): Promise<number> => {
@@ -44,7 +44,7 @@ export const runAudit = async (argv: string[]): Promise<number> => {
 
   const run = async (progress: (label: string) => void): Promise<AuditData> => {
     const started = performance.now();
-    const results = await auditFiles(
+    const { results, binary } = await auditFiles(
       root,
       files,
       loaded.rules,
@@ -56,8 +56,8 @@ export const runAudit = async (argv: string[]): Promise<number> => {
     );
     return {
       root,
-      files: files.length,
-      skipped,
+      files: results.length,
+      skipped: { ...skipped, binary: [...skipped.binary, ...binary].sort() },
       results,
       tallies: tallyByRule(results),
       spendUsd: results.reduce((s, r) => s + r.costUsd, 0),

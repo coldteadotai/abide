@@ -16,7 +16,7 @@ type OpenOptions = {
   use?: Use;
 };
 
-type ReadOptions = Omit<OpenOptions, "use"> & { maxBytes?: number };
+type ReadOptions = Omit<OpenOptions, "use"> & { maxBytes?: number; prefixBytes?: number };
 
 type WriteOptions = Omit<OpenOptions, "use"> & { use: Exclude<Use, "read"> };
 
@@ -58,16 +58,17 @@ export const openRegular = (
 };
 
 export const readRegularFile = (file: string, options: ReadOptions = {}): Buffer | undefined => {
-  const { maxBytes = MAX_FILE_READ_BYTES, ...open } = options;
+  const { maxBytes = MAX_FILE_READ_BYTES, prefixBytes, ...open } = options;
   const opened = openRegular(file, open);
   if (opened === undefined) return undefined;
   const { fd, size } = opened;
   try {
     if (size > maxBytes) return undefined;
-    const buffer = Buffer.alloc(size);
+    const length = prefixBytes === undefined ? size : Math.min(size, prefixBytes);
+    const buffer = Buffer.alloc(length);
     let read = 0;
-    while (read < size) {
-      const count = readSync(fd, buffer, read, size - read, read);
+    while (read < length) {
+      const count = readSync(fd, buffer, read, length - read, read);
       if (count === 0) break;
       read += count;
     }

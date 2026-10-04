@@ -1,12 +1,23 @@
-import { execSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
+import { tmpdir } from "node:os";
+import { execSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createBlobId } from "@coldtea/abide-schema";
 import { blobIdsAt, snapshotTree, splitDiff, workingTreeDiff } from "../src/lib/git.js";
 
 describe("the working tree diff", () => {
+  it("leaves staged and untracked binary content out of the model diff", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
+    execSync("git init -q .", { cwd: root });
+    const binary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
+    writeFileSync(path.join(root, "template.docx"), binary);
+    execSync("git add template.docx", { cwd: root });
+    writeFileSync(path.join(root, "unknown"), binary);
+    writeFileSync(path.join(root, "new.ts"), "export const b = 1;\n");
+    expect(splitDiff(workingTreeDiff(root, [])).map((f) => f.file)).toEqual(["new.ts"]);
+  });
+
   it("includes files git does not track yet", () => {
     const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
     execSync("git init -q .", { cwd: root });
