@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ruleAppliesTo } from "../src/lib/scope.js";
+import { ruleAppliesTo, ruleAppliesToRepo } from "../src/lib/scope.js";
 import { groupByScope, selectRules } from "../src/lib/checkRunner.js";
 import type { Rule } from "@coldtea/abide-schema";
 
@@ -58,6 +58,54 @@ describe("scope", () => {
     expect(selectRules(rules, "edit", ["lib/a.ts"]).map((r) => r.id)).toEqual(["edit"]);
     expect(selectRules(rules, "edit", ["src/a.ts"]).map((r) => r.id)).toEqual(["edit", "scoped"]);
     expect(selectRules(rules, "turn", ["src/a.ts"]).map((r) => r.id)).toEqual(["turn"]);
+  });
+});
+
+describe("repo scoping", () => {
+  const HOME = "/Users/u";
+
+  it("applies in every repo when no repos are named", () => {
+    expect(ruleAppliesToRepo({ repos: undefined }, "/anywhere/at/all", HOME)).toBe(true);
+  });
+
+  it("matches the repo root, in either spelling", () => {
+    expect(ruleAppliesToRepo({ repos: ["~/workspace/api"] }, "/Users/u/workspace/api", HOME)).toBe(
+      true,
+    );
+    expect(
+      ruleAppliesToRepo({ repos: ["/Users/u/workspace/api"] }, "/Users/u/workspace/api", HOME),
+    ).toBe(true);
+    expect(ruleAppliesToRepo({ repos: ["~/workspace/api"] }, "/Users/u/workspace/api", HOME)).toBe(
+      ruleAppliesToRepo({ repos: ["/Users/u/workspace/api"] }, "/Users/u/workspace/api", HOME),
+    );
+  });
+
+  it("keeps a rule out of every other repo", () => {
+    const rule = { repos: ["~/workspace/api"] };
+    expect(ruleAppliesToRepo(rule, "/Users/u/workspace/web", HOME)).toBe(false);
+    expect(ruleAppliesToRepo(rule, "/Users/u", HOME)).toBe(false);
+    expect(ruleAppliesToRepo(rule, "/tmp/api", HOME)).toBe(false);
+  });
+
+  it("compares whole segments, so a prefix is not a match", () => {
+    expect(
+      ruleAppliesToRepo({ repos: ["~/workspace/api"] }, "/Users/u/workspace/api-docs", HOME),
+    ).toBe(false);
+    expect(ruleAppliesToRepo({ repos: ["~/workspace/api"] }, "/Users/u/workspace/apis", HOME)).toBe(
+      false,
+    );
+  });
+
+  it("matches any one of several repos", () => {
+    const rule = { repos: ["~/workspace/web", "~/workspace/api"] };
+    expect(ruleAppliesToRepo(rule, "/Users/u/workspace/web", HOME)).toBe(true);
+    expect(ruleAppliesToRepo(rule, "/Users/u/workspace/api", HOME)).toBe(true);
+    expect(ruleAppliesToRepo(rule, "/Users/u/workspace/db", HOME)).toBe(false);
+  });
+
+  it("lets a rule name home itself", () => {
+    expect(ruleAppliesToRepo({ repos: ["~"] }, HOME, HOME)).toBe(true);
+    expect(ruleAppliesToRepo({ repos: ["~"] }, "/Users/u/workspace/api", HOME)).toBe(false);
   });
 });
 

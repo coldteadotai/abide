@@ -8,7 +8,8 @@ import {
   type RuleStatus,
 } from "@coldtea/abide-schema";
 import { hashFile } from "./sources.js";
-import { canonicalSourcePath, resolveSourcePath } from "./paths.js";
+import { canonicalSourcePath, homeDir, resolveSourcePath } from "./paths.js";
+import { ruleAppliesToRepo } from "./scope.js";
 import { readRegularText } from "./regularFile.js";
 
 export type RubricRead =
@@ -66,14 +67,29 @@ export const fillSourceShas = (
 
 export type MergedRule = Rule & { origin: "project" | "global" };
 
-/** Project rules win on an id clash. */
+/**
+ * Project rules win on an id clash.
+ *
+ * A rule naming repos is dropped when the repo under check is not one of them.
+ * Only global rules can be dropped this way in practice, but the filter is
+ * applied to both: a project rule that names its own repo is either a match
+ * (kept) or a statement that it belongs elsewhere (honoured). The clash is
+ * resolved first, so a project rule still overrides a global one of the same id
+ * — including where the global one would not have applied.
+ */
 export const mergeRules = (
   project: Rubric | undefined,
   global: Rubric | undefined,
+  root: string,
+  home: string,
 ): MergedRule[] => {
   const byId = new Map<string, MergedRule>();
-  for (const rule of global?.rules ?? []) byId.set(rule.id, { ...rule, origin: "global" });
-  for (const rule of project?.rules ?? []) byId.set(rule.id, { ...rule, origin: "project" });
+  const keep = (rule: Rule, origin: MergedRule["origin"]): void => {
+    if (!ruleAppliesToRepo(rule, root, home)) return;
+    byId.set(rule.id, { ...rule, origin });
+  };
+  for (const rule of global?.rules ?? []) keep(rule, "global");
+  for (const rule of project?.rules ?? []) keep(rule, "project");
   return [...byId.values()];
 };
 

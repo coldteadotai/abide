@@ -136,6 +136,16 @@ export const ruleSchema = z
     /** The rule as the user wrote it, quoted or lightly shortened. */
     text: z.string().min(1).max(600),
     source: ruleSourceSchema,
+    /**
+     * Repos this rule belongs to, as absolute paths or "~/..." prefixes. Absent
+     * means every repo.
+     *
+     * A global rule's `scope` cannot say this: it is resolved against whichever
+     * repo the edit is in, so `docs/**` in the global rubric matches `docs/` in
+     * all of them. `scope` answers "where inside a repo", this answers "which
+     * repo", and both may be set.
+     */
+    repos: z.array(z.string().min(1)).min(1).optional(),
     /** Globs relative to the repo root. Absent means every file. */
     scope: z.array(z.string().min(1)).min(1).optional(),
     when: ruleWhenSchema.optional(),
