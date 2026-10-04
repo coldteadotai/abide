@@ -46,14 +46,14 @@ const SKIP_FILE =
 export type FileDiff = { file: string; text: string };
 
 /** Splits a unified diff into per-file hunk text, dropping generated, binary and excluded files. */
-export const splitDiff = (patch: string): FileDiff[] => {
+export const splitDiff = (patch: string, root?: string): FileDiff[] => {
   const out: FileDiff[] = [];
   for (const file of parsePatch(patch)) {
     // A deletion has no new name: its old one is the file the turn removed.
     const named =
       file.newFileName && file.newFileName !== "/dev/null" ? file.newFileName : file.oldFileName;
     const name = (named ?? "").replace(/^[ab]\//, "");
-    if (name === "" || name === "/dev/null" || SKIP_FILE.test(name) || isExcludedPath(name)) {
+    if (name === "" || name === "/dev/null" || SKIP_FILE.test(name) || isExcludedPath(name, root)) {
       continue;
     }
     if (file.hunks.length === 0) continue;
@@ -96,7 +96,7 @@ export const recentHistory = (
       commit,
     ]);
     if (patch === undefined || patch.trim() === "") continue;
-    const files = splitDiff(patch);
+    const files = splitDiff(patch, root);
     if (files.length === 0) continue;
     if (commits.length < wantCommits) {
       const size = files.reduce((sum, f) => sum + f.text.length, 0);

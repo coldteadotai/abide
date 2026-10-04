@@ -40,7 +40,7 @@ export const runCheckCommand = async (argv: string[]): Promise<number> => {
     values.diff === undefined
       ? workingTreeDiff(root, positionals)
       : readFileSync(values.diff, "utf8");
-  const files = splitDiff(patch);
+  const files = splitDiff(patch, root);
   const phase = values.phase;
 
   const run = async (progress: (label: string) => void): Promise<CheckData> => {

@@ -42,7 +42,7 @@ export const handlePostToolUse = async (raw: unknown): Promise<HookOutput> => {
   const root = findRepoRoot(all[0]?.filePath ?? input.cwd);
   const turn = turnDir(input.session_id, turnIdOf(input));
   for (const removed of removedByPatch(input)) recordFileStart(turn, removed, null);
-  const edits = all.filter((e) => !isExcludedPath(relativeToRoot(root, e.filePath)));
+  const edits = all.filter((e) => !isExcludedPath(relativeToRoot(root, e.filePath), root));
   if (edits.length === 0) return { kind: "silent" };
 
   for (const edit of edits) recordFileStart(turn, edit.filePath, edit.original);
