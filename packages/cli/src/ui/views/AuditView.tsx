@@ -1,17 +1,17 @@
 import { Box, Text } from "ink";
 import type { Verdict } from "@coldtea/abide-schema";
-import type { AuditFileResult, RuleTally } from "../../lib/audit.js";
 import { ms, usd } from "../../lib/ui.js";
+import { Header } from "../components/Header.js";
 import { Callout } from "../components/Callout.js";
 import { Columns } from "../components/Columns.js";
-import { Header } from "../components/Header.js";
 import { Section } from "../components/Section.js";
 import { glyph, meter, palette } from "../theme.js";
+import type { AuditSkipped, AuditFileResult, RuleTally } from "../../lib/audit.js";
 
 export type AuditData = {
   root: string;
   files: number;
-  skipped: { tooBig: string[]; outOfScope: number };
+  skipped: AuditSkipped;
   results: AuditFileResult[];
   tallies: RuleTally[];
   spendUsd: number;
@@ -32,6 +32,17 @@ export function AuditView({ data }: { data: AuditData }) {
   const fileRows = [...broken, ...(data.all ? flaggedOnly : [])].sort(
     (a, b) => (worst(b)?.probability ?? 0) - (worst(a)?.probability ?? 0),
   );
+  const skipped = [
+    data.skipped.outOfScope
+      ? `${data.skipped.outOfScope} ${data.skipped.outOfScope === 1 ? "file" : "files"} no rule applies to`
+      : "",
+    data.skipped.tooBig.length ? `${data.skipped.tooBig.length} too big to send` : "",
+    data.skipped.binary.length
+      ? `${data.skipped.binary.length} binary ${data.skipped.binary.length === 1 ? "file" : "files"}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" and ");
   return (
     <Box flexDirection="column">
       <Header
@@ -127,12 +138,9 @@ export function AuditView({ data }: { data: AuditData }) {
           ))}
         </Callout>
       ) : null}
-      {data.skipped.tooBig.length + data.skipped.outOfScope > 0 ? (
+      {skipped ? (
         <Text color={palette.ash}>
-          Skipped {data.skipped.outOfScope} {data.skipped.outOfScope === 1 ? "file" : "files"} no
-          rule applies to
-          {data.skipped.tooBig.length ? ` and ${data.skipped.tooBig.length} too big to send` : ""}.
-          Turn-phase rules do not apply to an audit.
+          Skipped {skipped}. Turn-phase rules do not apply to an audit.
         </Text>
       ) : null}
     </Box>

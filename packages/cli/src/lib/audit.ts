@@ -1,6 +1,6 @@
-import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { lstatSync, realpathSync } from "node:fs";
 import {
   AbideError,
   assertNever,
@@ -8,15 +8,16 @@ import {
   type Thresholds,
   type Verdict,
 } from "@coldtea/abide-schema";
-import { loudestVerdicts, runCheck, type CheckOutcome } from "./checkRunner.js";
+import { isModelRule } from "./jev.js";
+import { ruleAppliesTo } from "./scope.js";
+import { readRegularFile } from "./regularFile.js";
 import { MAX_DIFF_INPUT_CHARS } from "./constants.js";
 import { isExcludedPath, relativeToRoot } from "./paths.js";
-import { readRegularText } from "./regularFile.js";
+import { BINARY_SAMPLE_BYTES, isBinaryContent } from "./binary.js";
+import { loudestVerdicts, runCheck, type CheckOutcome } from "./checkRunner.js";
 
 /** An audit is not on the agent's clock: a call may wait out a rate limit rather than count as a miss. */
 const AUDIT_CALL_TIMEOUT_MS = 30_000;
-import { isModelRule } from "./jev.js";
-import { ruleAppliesTo } from "./scope.js";
 
 const SKIP_FILE =
   /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|go\.sum)$|\.(min\.js|min\.css|map|svg|png|jpg|jpeg|gif|ico|woff2?|ttf|pdf|lock|snap|jsonl)$/;
@@ -79,17 +80,20 @@ const insideRepo = (root: string, file: string): string | undefined => {
   }
 };
 
+export type AuditSkipped = { tooBig: string[]; binary: string[]; outOfScope: number };
+
 /** The files at least one active edit-phase model rule applies to; audits judge nothing else. */
 export const auditableFiles = (
   root: string,
   files: readonly string[],
   rules: readonly Rule[],
-): { files: string[]; skipped: { tooBig: string[]; outOfScope: number } } => {
+): { files: string[]; skipped: AuditSkipped } => {
   const editRules = rules.filter(
     (r) => isModelRule(r) && r.status === "active" && r.when === "edit",
   );
   const kept: string[] = [];
   const tooBig: string[] = [];
+  const binary: string[] = [];
   let outOfScope = 0;
   for (const file of files) {
     if (!editRules.some((r) => ruleAppliesTo(r, file))) {
@@ -108,9 +112,18 @@ export const auditableFiles = (
     } catch {
       continue;
     }
+    const sample = readRegularFile(real, {
+      maxBytes: MAX_DIFF_INPUT_CHARS,
+      prefixBytes: BINARY_SAMPLE_BYTES,
+      followSymlinks: false,
+    });
+    if (sample !== undefined && isBinaryContent(sample)) {
+      binary.push(file);
+      continue;
+    }
     kept.push(file);
   }
-  return { files: kept, skipped: { tooBig, outOfScope } };
+  return { files: kept, skipped: { tooBig, binary, outOfScope } };
 };
 
 /** A whole file as one hunk of added lines: how an audit shows a judge a file that was never "changed". */
@@ -149,6 +162,8 @@ export type AuditFileResult = {
 };
 
 export type AuditProgress = (done: number, total: number, spendUsd: number) => void;
+
+export type AuditRunResult = { results: AuditFileResult[]; binary: string[] };
 
 export const pool = async <T>(
   items: readonly T[],
@@ -223,31 +238,44 @@ export const auditFiles = async (
   thresholds: Thresholds,
   concurrency: number,
   progress: AuditProgress,
-): Promise<AuditFileResult[]> => {
+): Promise<AuditRunResult> => {
   const judgedByFile = new Map<string, Judged>();
   const unreadable: AuditFileResult[] = [];
+  const binary: string[] = [];
   let done = 0;
   let spendUsd = 0;
+  const reportProgress = (): void =>
+    progress(done - binary.length, files.length - binary.length, spendUsd);
   await pool(files, concurrency, async (file) => {
-    const real = insideRepo(root, file);
-    const content =
-      real === undefined ? undefined : readRegularText(real, { followSymlinks: false });
-    if (content === undefined) {
-      unreadable.push({
-        file,
-        verdicts: [],
-        rules: 0,
-        latencyMs: 0,
-        costUsd: 0,
-        error: "not a regular file inside the repository, or could not be read",
-      });
-      return;
+    try {
+      const real = insideRepo(root, file);
+      const bytes =
+        real === undefined
+          ? undefined
+          : readRegularFile(real, { maxBytes: MAX_DIFF_INPUT_CHARS, followSymlinks: false });
+      if (bytes === undefined) {
+        unreadable.push({
+          file,
+          verdicts: [],
+          rules: 0,
+          latencyMs: 0,
+          costUsd: 0,
+          error:
+            "not a regular file inside the repository, or could not be read within the size limit",
+        });
+        return;
+      }
+      if (isBinaryContent(bytes)) {
+        binary.push(file);
+        return;
+      }
+      const judged = await judge(file, fileAsChunks(bytes.toString("utf8")), rules, thresholds);
+      judgedByFile.set(file, judged);
+      spendUsd += judged.outs.reduce((s, o) => s + (o.usage.costUsd ?? 0), 0);
+    } finally {
+      done += 1;
+      reportProgress();
     }
-    const judged = await judge(file, fileAsChunks(content), rules, thresholds);
-    judgedByFile.set(file, judged);
-    spendUsd += judged.outs.reduce((s, o) => s + (o.usage.costUsd ?? 0), 0);
-    done += 1;
-    progress(done, files.length, spendUsd);
   });
   // A second pass, one at a time, for chunks the gateway turned away while it
   // was busy with the rest of the pool. Most of them go through on their own.
@@ -262,12 +290,15 @@ export const auditFiles = async (
     judged.outs.push(...retried.outs);
     judged.failed = retried.failed;
     spendUsd += retried.outs.reduce((s, o) => s + (o.usage.costUsd ?? 0), 0);
-    progress(done, files.length, spendUsd);
+    reportProgress();
   }
-  return [
-    ...unreadable,
-    ...[...judgedByFile].map(([file, judged]) => summarize(file, judged)),
-  ].sort((a, b) => a.file.localeCompare(b.file));
+  return {
+    results: [
+      ...unreadable,
+      ...[...judgedByFile].map(([file, judged]) => summarize(file, judged)),
+    ].sort((a, b) => a.file.localeCompare(b.file)),
+    binary: binary.sort(),
+  };
 };
 
 export type RuleTally = { ruleId: string; broken: string[]; flagged: string[]; checked: number };
