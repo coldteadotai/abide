@@ -30,6 +30,15 @@ describe("the working tree diff", () => {
     expect(files.find((f) => f.file === "new.ts")?.text).toContain("+export const b = 1;");
   });
 
+  it("includes untracked files whose names git would quote", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
+    execSync("git init -q .", { cwd: root });
+    writeFileSync(path.join(root, "café.ts"), "export const c = 1;\n");
+    writeFileSync(path.join(root, 'say "hi".ts'), "export const d = 1;\n");
+    const files = splitDiff(workingTreeDiff(root, []));
+    expect(files.map((f) => f.file).sort()).toEqual(["café.ts", 'say "hi".ts']);
+  });
+
   it("leaves secret files out of every patch it splits", () => {
     const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
     execSync("git init -q .", { cwd: root });
