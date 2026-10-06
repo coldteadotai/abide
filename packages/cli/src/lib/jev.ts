@@ -41,6 +41,7 @@ export type CheckState = {
   file?: string;
   files?: string[];
   diff: string;
+  context?: string;
 };
 
 export type ModelCheckResult = {

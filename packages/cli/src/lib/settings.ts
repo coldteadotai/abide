@@ -55,8 +55,10 @@ export const readSettings = (file: string): Settings => {
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
-  } catch {
-    return {};
+  } catch (cause) {
+    if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT")
+      return {};
+    throw new AbideError("SETTINGS_INVALID", `could not read settings at ${file}`, { cause });
   }
   if (raw.trim() === "") return {};
   try {
