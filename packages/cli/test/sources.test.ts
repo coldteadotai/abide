@@ -105,13 +105,9 @@ describe("global sources", () => {
     mkdirSync(path.join(home, "claude-work"));
     writeFileSync(path.join(home, "claude-work", "CLAUDE.md"), "- configured dir\n");
     vi.stubEnv("ABIDE_HOME_DIR", home);
-    try {
-      expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/.claude/CLAUDE.md"]);
-      vi.stubEnv("CLAUDE_CONFIG_DIR", "~/claude-work");
-      expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/claude-work/CLAUDE.md"]);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/.claude/CLAUDE.md"]);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "~/claude-work");
+    expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/claude-work/CLAUDE.md"]);
   });
 });
 
