@@ -1,12 +1,11 @@
 import { readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { AbideError, assertNever, hostSchema, type Host } from "@coldtea/abide-schema";
 import { hasApiKey, NO_KEY_HINT } from "../lib/credentials.js";
 import { hostLabel } from "../lib/hosts.js";
 import { loadRules } from "../lib/loadRules.js";
-import { findRepoRoot } from "../lib/paths.js";
+import { claudeConfigDir, findRepoRoot } from "../lib/paths.js";
 import {
   driftByTurn,
   parseTranscript,
@@ -25,7 +24,7 @@ import { collectReplaySessions, type ReplayCollection } from "../lib/replayColle
 
 /** Claude Code names the transcript directory after the repo path. */
 export const claudeProjectDir = (root: string): string =>
-  path.join(homedir(), ".claude", "projects", root.replace(/[/.]/g, "-"));
+  path.join(claudeConfigDir(), "projects", root.replace(/[/.]/g, "-"));
 
 const transcriptFiles = (target: string): string[] => {
   const stat = statSync(target);
