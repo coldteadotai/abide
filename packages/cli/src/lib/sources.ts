@@ -167,6 +167,19 @@ export const checkStaleness = (
   return { status: "stale", changed, added, removed, unhashed };
 };
 
+export const needsCompile = (s: Staleness): boolean => {
+  switch (s.status) {
+    case "missing":
+    case "stale":
+      return true;
+    case "fresh":
+    case "manual":
+      return false;
+    default:
+      return assertNeverStaleness(s);
+  }
+};
+
 export const describeStaleness = (s: Staleness): string => {
   switch (s.status) {
     case "missing":

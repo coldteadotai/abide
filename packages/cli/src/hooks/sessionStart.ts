@@ -11,21 +11,22 @@ import {
   checkStaleness,
   discoverGlobalSources,
   discoverProjectSources,
-  type Staleness,
+  needsCompile,
 } from "../lib/sources.js";
 
 export type CompilePlan = {
   targets: CompileTarget[];
   invalid: string[];
+  /** Rubrics left alone because they are marked manual. */
+  manual: CompileTarget["which"][];
   noSources: boolean;
 };
-
-const needsCompile = (s: Staleness): boolean => s.status !== "fresh" && s.status !== "manual";
 
 /** What, if anything, needs compiling for this repository and this machine. */
 export const planCompile = (root: string): CompilePlan => {
   const targets: CompileTarget[] = [];
   const invalid: string[] = [];
+  const manual: CompileTarget["which"][] = [];
 
   const project = discoverProjectSources(root);
   const projectRead = readRubric(rubricPath(root));
@@ -34,6 +35,7 @@ export const planCompile = (root: string): CompilePlan => {
   }
   const projectRubric = projectRead.kind === "ok" ? projectRead.rubric : undefined;
   const projectStale = checkStaleness(projectRubric, project, root);
+  if (projectStale.status === "manual") manual.push("project");
   if (
     project.some((c) => c.required) &&
     needsCompile(projectStale) &&
@@ -55,6 +57,7 @@ export const planCompile = (root: string): CompilePlan => {
   }
   const globalRubric = globalRead.kind === "ok" ? globalRead.rubric : undefined;
   const globalStale = checkStaleness(globalRubric, global, homeDir());
+  if (globalStale.status === "manual") manual.push("global");
   if (global.length > 0 && needsCompile(globalStale) && globalRead.kind !== "invalid") {
     targets.push({
       which: "global",
@@ -65,7 +68,7 @@ export const planCompile = (root: string): CompilePlan => {
     });
   }
 
-  return { targets, invalid, noSources: project.length === 0 && global.length === 0 };
+  return { targets, invalid, manual, noSources: project.length === 0 && global.length === 0 };
 };
 
 export const handleSessionStart = async (raw: unknown): Promise<HookOutput> => {

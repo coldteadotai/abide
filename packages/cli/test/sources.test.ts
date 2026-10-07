@@ -72,7 +72,7 @@ describe("source discovery", () => {
     try {
       mkdirSync(path.join(root, ".abide"));
       writeFileSync(path.join(root, ".abide", "rubric.json"), JSON.stringify(manual));
-      expect(planCompile(root).targets).toEqual([]);
+      expect(planCompile(root)).toMatchObject({ targets: [], manual: ["project"] });
       writeFileSync(
         path.join(root, ".abide", "rubric.json"),
         JSON.stringify({ ...manual, manual: false }),

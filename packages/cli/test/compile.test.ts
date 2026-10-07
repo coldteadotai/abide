@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,6 +100,17 @@ it("passes the global target and statistics to Pi for tune --global", () => {
   f.run(["tune", "--global", "--agent", "pi"]);
   expect(f.invocation().args.at(-1)).toContain(path.join(f.home, ".abide", "global.json"));
   expect(f.invocation().args.at(-1)).toContain("Calibration and firing statistics");
+});
+
+it("leaves a manual rubric alone, even with no instruction file to compile from", () => {
+  const f = fixture(["claude"]);
+  unlinkSync(path.join(f.root, "AGENTS.md"));
+  writeFileSync(
+    path.join(f.root, ".abide", "rubric.json"),
+    JSON.stringify({ ...rubric, manual: true }),
+  );
+  expect(f.run(["compile"])).toContain("maintained by hand");
+  expect(existsSync(f.record)).toBe(false);
 });
 
 it("prefers Claude when both runners are available", () => {
