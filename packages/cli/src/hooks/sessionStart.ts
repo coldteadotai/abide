@@ -7,13 +7,20 @@ import { placeCompileSkill } from "../lib/packageRoot.js";
 import { findRepoRoot, globalRubricPath, homeDir, rubricPath } from "../lib/paths.js";
 import { readRubric } from "../lib/rubricFile.js";
 import { pruneOldTurns } from "../lib/session.js";
-import { checkStaleness, discoverGlobalSources, discoverProjectSources } from "../lib/sources.js";
+import {
+  checkStaleness,
+  discoverGlobalSources,
+  discoverProjectSources,
+  type Staleness,
+} from "../lib/sources.js";
 
 export type CompilePlan = {
   targets: CompileTarget[];
   invalid: string[];
   noSources: boolean;
 };
+
+const needsCompile = (s: Staleness): boolean => s.status !== "fresh" && s.status !== "manual";
 
 /** What, if anything, needs compiling for this repository and this machine. */
 export const planCompile = (root: string): CompilePlan => {
@@ -29,7 +36,7 @@ export const planCompile = (root: string): CompilePlan => {
   const projectStale = checkStaleness(projectRubric, project, root);
   if (
     project.some((c) => c.required) &&
-    projectStale.status !== "fresh" &&
+    needsCompile(projectStale) &&
     projectRead.kind !== "invalid"
   ) {
     targets.push({
@@ -48,7 +55,7 @@ export const planCompile = (root: string): CompilePlan => {
   }
   const globalRubric = globalRead.kind === "ok" ? globalRead.rubric : undefined;
   const globalStale = checkStaleness(globalRubric, global, homeDir());
-  if (global.length > 0 && globalStale.status !== "fresh" && globalRead.kind !== "invalid") {
+  if (global.length > 0 && needsCompile(globalStale) && globalRead.kind !== "invalid") {
     targets.push({
       which: "global",
       root: homeDir(),

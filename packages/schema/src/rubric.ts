@@ -183,6 +183,8 @@ export const rubricSchema = z
     version: z.literal(RUBRIC_VERSION),
     compiledAt: z.string(),
     compiledBy: z.string().optional(),
+    /** Written by hand: never reported stale, so session start never asks to recompile it. */
+    manual: z.boolean().optional(),
     sources: z.array(rubricSourceSchema),
     thresholds: thresholdsSchema.optional(),
     rules: z.array(ruleSchema),

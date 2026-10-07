@@ -138,6 +138,7 @@ export const hashFile = (absolute: string): string | undefined => {
 export type Staleness =
   | { status: "missing" }
   | { status: "fresh" }
+  | { status: "manual" }
   | { status: "stale"; changed: string[]; added: string[]; removed: string[]; unhashed: string[] };
 
 export const checkStaleness = (
@@ -146,6 +147,7 @@ export const checkStaleness = (
   root: string,
 ): Staleness => {
   if (rubric === undefined) return { status: "missing" };
+  if (rubric.manual === true) return { status: "manual" };
   const changed: string[] = [];
   const removed: string[] = [];
   const unhashed: string[] = [];
@@ -171,6 +173,8 @@ export const describeStaleness = (s: Staleness): string => {
       return "no rubric yet";
     case "fresh":
       return "up to date";
+    case "manual":
+      return "maintained by hand";
     case "stale": {
       const parts: string[] = [];
       if (s.changed.length) parts.push(`changed: ${s.changed.join(", ")}`);
