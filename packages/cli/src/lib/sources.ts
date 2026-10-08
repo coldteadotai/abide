@@ -1,7 +1,7 @@
 import { readdirSync, existsSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
-import { homeDir, piAgentDir, resolveSourcePath, toSourcePath } from "./paths.js";
+import { claudeConfigDir, homeDir, piAgentDir, resolveSourcePath, toSourcePath } from "./paths.js";
 import { readRegularFile } from "./regularFile.js";
 
 export type SourceCandidate = {
@@ -38,7 +38,11 @@ const contextNames = (dir: string): string[] => {
     ),
   ];
 };
-const GLOBAL_NAMES = ["~/.claude/CLAUDE.md", "~/.codex/AGENTS.md", "~/.config/opencode/AGENTS.md"];
+const globalFiles = (): string[] => [
+  path.join(claudeConfigDir(), "CLAUDE.md"),
+  path.join(homeDir(), ".codex", "AGENTS.md"),
+  path.join(homeDir(), ".config", "opencode", "AGENTS.md"),
+];
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -109,12 +113,19 @@ export const discoverProjectSources = (root: string): SourceCandidate[] => {
 };
 
 export const discoverGlobalSources = (): SourceCandidate[] => {
-  const found: SourceCandidate[] = GLOBAL_NAMES.flatMap((p) => {
-    const absolute = path.join(homeDir(), p.slice(2));
-    return existsSync(absolute)
-      ? [{ path: p, absolute, scope: "**/*", required: true, origin: "global" as const }]
-      : [];
-  });
+  const found: SourceCandidate[] = globalFiles().flatMap((absolute) =>
+    existsSync(absolute)
+      ? [
+          {
+            path: toSourcePath(homeDir(), absolute),
+            absolute,
+            scope: "**/*",
+            required: true,
+            origin: "global" as const,
+          },
+        ]
+      : [],
+  );
   const agentDir = piAgentDir();
   const name = contextNames(agentDir)[0];
   if (name !== undefined) {

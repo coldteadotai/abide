@@ -4,7 +4,7 @@ import { AbideError, assertNever, HOSTS, hostSchema, type Host } from "@coldtea/
 import { findExecutable } from "./executable.js";
 import { installOpencodePlugin, uninstallOpencodePlugin } from "./opencodePlugin.js";
 import { hookScriptPath } from "./packageRoot.js";
-import { homeDir, piAgentDir } from "./paths.js";
+import { claudeConfigDir, homeDir, piAgentDir } from "./paths.js";
 import { installPiExtension, uninstallPiExtension } from "./piExtension.js";
 import { hookSpecs, installHooks, uninstallHooks } from "./settings.js";
 
@@ -35,7 +35,7 @@ const onPath = (bin: string): boolean => findExecutable(bin) !== undefined;
 export const hostPresent = (host: Host): boolean => {
   switch (host) {
     case "claude":
-      return existsSync(path.join(homeDir(), ".claude")) || onPath("claude");
+      return existsSync(claudeConfigDir()) || onPath("claude");
     case "codex":
       return existsSync(path.join(homeDir(), ".codex")) || onPath("codex");
     case "opencode":
@@ -59,7 +59,7 @@ export const installTarget = (host: Host, root: string, project: boolean): strin
     case "claude":
       return project
         ? path.join(root, ".claude", "settings.json")
-        : path.join(homeDir(), ".claude", "settings.json");
+        : path.join(claudeConfigDir(), "settings.json");
     case "codex":
       return project
         ? path.join(root, ".codex", "hooks.json")

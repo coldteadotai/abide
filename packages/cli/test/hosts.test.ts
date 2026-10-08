@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   detectHosts,
   installHost,
@@ -16,6 +16,7 @@ import {
   parseHost,
   uninstallHost,
 } from "../src/lib/hosts.js";
+import { claudeProjectDir } from "../src/commands/replay.js";
 import { OPENCODE_PLUGIN_MARKER } from "../src/lib/opencodePlugin.js";
 
 let home: string;
@@ -43,6 +44,17 @@ describe("hosts", () => {
     mkdirSync(path.join(home, ".codex"));
     mkdirSync(path.join(home, ".config", "opencode"), { recursive: true });
     expect(detectHosts()).toEqual(["codex", "opencode"]);
+  });
+
+  it("finds Claude Code's global settings and transcripts under CLAUDE_CONFIG_DIR", () => {
+    expect(claudeProjectDir("/a/b.c")).toBe(path.join(home, ".claude", "projects", "-a-b-c"));
+    const config = path.join(home, "claude-work");
+    mkdirSync(config);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", config);
+    expect(detectHosts()).toEqual(["claude"]);
+    expect(installTarget("claude", root, false)).toBe(path.join(config, "settings.json"));
+    expect(installTarget("claude", root, true)).toBe(path.join(root, ".claude", "settings.json"));
+    expect(claudeProjectDir("/a/b.c")).toBe(path.join(config, "projects", "-a-b-c"));
   });
 
   it("detects a host that is only on PATH, spelled as its shell would find it", () => {
