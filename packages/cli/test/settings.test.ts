@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -62,6 +62,27 @@ describe("settings", () => {
     const after = JSON.parse(readFileSync(file, "utf8"));
     expect(after.hooks.Stop).toEqual([{ hooks: [{ type: "command", command: "theirs.sh" }] }]);
     expect(installedHookEvents(file)).toEqual([]);
+  });
+
+  it("preserves unreadable but writable settings instead of treating them as missing", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-settings-"));
+    const file = path.join(root, "settings.json");
+    const original = JSON.stringify({
+      model: "keep-me",
+      hooks: { Stop: [{ hooks: [{ type: "command", command: "other.sh" }] }] },
+    });
+    writeFileSync(file, original);
+    chmodSync(file, 0o200);
+    try {
+      expect(() => installHooks(file, hookSpecs("/pkg/dist/abide-hook.js"))).toThrow(
+        /could not read/,
+      );
+    } finally {
+      chmodSync(file, 0o600);
+      const after = readFileSync(file, "utf8");
+      rmSync(root, { recursive: true, force: true });
+      expect(after).toBe(original);
+    }
   });
 
   it("refuses a settings file it cannot parse", () => {

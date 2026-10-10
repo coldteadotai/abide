@@ -90,6 +90,8 @@ export const modelCheckSchema = z.object({
   type: z.literal("model"),
   question: questionSchema,
   overlaps: overlapsSchema,
+  /** Send the judge graft context (file skeletons, callers and callees) with the change. */
+  context: z.boolean().optional(),
 });
 
 export const deferredCheckSchema = z.object({

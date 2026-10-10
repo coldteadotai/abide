@@ -11,6 +11,7 @@ import {
 import { isModelRule } from "./jev.js";
 import { ruleAppliesTo } from "./scope.js";
 import { readRegularFile } from "./regularFile.js";
+import { buildFileContext } from "./graftContext.js";
 import { MAX_DIFF_INPUT_CHARS } from "./constants.js";
 import { isExcludedPath, relativeToRoot } from "./paths.js";
 import { BINARY_SAMPLE_BYTES, isBinaryContent } from "./binary.js";
@@ -82,14 +83,15 @@ const insideRepo = (root: string, file: string): string | undefined => {
 
 export type AuditSkipped = { tooBig: string[]; binary: string[]; outOfScope: number };
 
-/** The files at least one active edit-phase model rule applies to; audits judge nothing else. */
+/** The files at least one active edit-phase (or check.context) model rule applies to; audits judge nothing else. */
 export const auditableFiles = (
   root: string,
   files: readonly string[],
   rules: readonly Rule[],
 ): { files: string[]; skipped: AuditSkipped } => {
   const editRules = rules.filter(
-    (r) => isModelRule(r) && r.status === "active" && r.when === "edit",
+    (r) =>
+      isModelRule(r) && r.status === "active" && (r.when === "edit" || r.check.context === true),
   );
   const kept: string[] = [];
   const tooBig: string[] = [];
@@ -183,13 +185,27 @@ export const pool = async <T>(
   await Promise.all(workers);
 };
 
-type Judged = { outs: CheckOutcome[]; failed: { text: string; error: string }[]; chunks: number };
+type ContextJudging = { rules: Rule[]; context: string | undefined };
+
+type Judged = {
+  outs: CheckOutcome[];
+  failed: { text: string; error: string }[];
+  chunks: number;
+  withContext?: ContextJudging;
+};
+
+/** check.context rules are judged apart, with the file's context, whatever phase they are written for. */
+const contextRulesOf = (rules: readonly Rule[]): Rule[] =>
+  rules
+    .filter((r) => isModelRule(r) && r.status === "active" && r.check.context === true)
+    .map((r) => ({ ...r, when: "edit" }));
 
 const judge = async (
   file: string,
   chunks: readonly string[],
   rules: readonly Rule[],
   thresholds: Thresholds,
+  withContext?: ContextJudging,
 ): Promise<Judged> => {
   const outs: CheckOutcome[] = [];
   const failed: { text: string; error: string }[] = [];
@@ -199,12 +215,25 @@ const judge = async (
         await runCheck({
           phase: "edit",
           fileDiffs: [{ file, text }],
-          rules,
+          rules: rules.filter((r) => !(isModelRule(r) && r.check.context === true)),
           thresholds,
           timeoutMs: AUDIT_CALL_TIMEOUT_MS,
           retries: 3,
         }),
       );
+      if (withContext !== undefined && withContext.rules.length > 0) {
+        outs.push(
+          await runCheck({
+            phase: "edit",
+            fileDiffs: [{ file, text }],
+            rules: withContext.rules,
+            ...(withContext.context === undefined ? {} : { context: withContext.context }),
+            thresholds,
+            timeoutMs: AUDIT_CALL_TIMEOUT_MS,
+            retries: 3,
+          }),
+        );
+      }
     } catch (error) {
       failed.push({ text, error: error instanceof Error ? error.message : String(error) });
     }
@@ -218,7 +247,7 @@ const summarize = (file: string, judged: Judged): AuditFileResult => {
   return {
     file,
     verdicts: loudestVerdicts(judged.outs.flatMap((o) => o.verdicts)),
-    rules: judged.outs[0]?.modelRules.length ?? 0,
+    rules: new Set(judged.outs.flatMap((o) => o.modelRules.map((r) => r.id))).size,
     latencyMs: judged.outs.reduce((s, o) => s + o.modelLatencyMs, 0),
     costUsd,
     chunks: judged.chunks,
@@ -269,7 +298,15 @@ export const auditFiles = async (
         binary.push(file);
         return;
       }
-      const judged = await judge(file, fileAsChunks(bytes.toString("utf8")), rules, thresholds);
+      const content = bytes.toString("utf8");
+      // Context is built once per file and reused for every chunk of it.
+      const contextRules = contextRulesOf(rules).filter((r) => ruleAppliesTo(r, file));
+      const withContext =
+        contextRules.length === 0
+          ? undefined
+          : { rules: contextRules, context: await buildFileContext(file, content, root) };
+      const judged = await judge(file, fileAsChunks(content), rules, thresholds, withContext);
+      if (withContext !== undefined) judged.withContext = withContext;
       judgedByFile.set(file, judged);
       spendUsd += judged.outs.reduce((s, o) => s + (o.usage.costUsd ?? 0), 0);
     } finally {
@@ -286,6 +323,7 @@ export const auditFiles = async (
       judged.failed.map((f) => f.text),
       rules,
       thresholds,
+      judged.withContext,
     );
     judged.outs.push(...retried.outs);
     judged.failed = retried.failed;

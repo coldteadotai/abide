@@ -1,6 +1,7 @@
 import type { CheckPhase, Rule, Thresholds, Usage, Verdict } from "@coldtea/abide-schema";
 import type { FileDiff } from "./git.js";
-import { checkWithModel, isModelRule, type ModelRule } from "./jev.js";
+import { buildContext } from "./graftContext.js";
+import { checkWithModel, isModelRule, type CheckState, type ModelRule } from "./jev.js";
 import { ruleAppliesTo } from "./scope.js";
 
 export type CheckRequest = {
@@ -8,6 +9,8 @@ export type CheckRequest = {
   /** The change, one entry per touched file, paths repo-relative. */
   fileDiffs: readonly FileDiff[];
   task?: string;
+  /** Repo context for rules with `check.context`; built here for the turn phase when absent. Audit passes its own. */
+  context?: string;
   rules: readonly Rule[];
   thresholds: Thresholds;
   timeoutMs: number;
@@ -86,11 +89,33 @@ export const mergeOutcomes = (outcomes: readonly CheckOutcome[]): CheckOutcome =
   };
 };
 
+/** The state the judge sees; without a context it is exactly the change. */
+export const judgeState = (
+  request: Pick<CheckRequest, "phase" | "task">,
+  group: { fileDiffs: readonly FileDiff[] },
+  only: FileDiff | undefined,
+  context?: string,
+): CheckState => ({
+  ...(request.task === undefined ? {} : { task: request.task }),
+  ...(request.phase === "edit" && only !== undefined
+    ? { file: only.file, diff: only.text }
+    : { files: group.fileDiffs.map((f) => f.file), diff: renderFiles(group.fileDiffs) }),
+  ...(context === undefined ? {} : { context }),
+});
+
 export const runCheck = async (request: CheckRequest): Promise<CheckOutcome> => {
   const files = request.fileDiffs.map((f) => f.file);
   const modelRules = selectRules(request.rules, request.phase, files).filter(isModelRule);
 
-  const groups = groupByScope(modelRules, request.fileDiffs);
+  // Rules with check.context get repo context in their own call; the rest are untouched.
+  const wantsContext = (rule: ModelRule): boolean =>
+    rule.check.context === true && (request.phase === "turn" || request.context !== undefined);
+  const plainGroups = groupByScope(
+    modelRules.filter((r) => !wantsContext(r)),
+    request.fileDiffs,
+  );
+  const contextGroups = groupByScope(modelRules.filter(wantsContext), request.fileDiffs);
+  const groups = [...plainGroups, ...contextGroups];
   if (groups.length === 0) {
     return { verdicts: [], modelRules, calls: 0, usage: {}, modelLatencyMs: 0 };
   }
@@ -99,14 +124,12 @@ export const runCheck = async (request: CheckRequest): Promise<CheckOutcome> => 
   const results = await Promise.all(
     groups.map(async (group) => {
       const only = group.fileDiffs.length === 1 ? group.fileDiffs[0] : undefined;
+      const context = contextGroups.includes(group)
+        ? (request.context ?? (await buildContext(group.fileDiffs)))
+        : undefined;
       const result = await checkWithModel(
         group.rules,
-        {
-          ...(request.task === undefined ? {} : { task: request.task }),
-          ...(request.phase === "edit" && only !== undefined
-            ? { file: only.file, diff: only.text }
-            : { files: group.fileDiffs.map((f) => f.file), diff: renderFiles(group.fileDiffs) }),
-        },
+        judgeState(request, group, only, context),
         request.thresholds,
         request.timeoutMs,
         request.retries ?? 0,

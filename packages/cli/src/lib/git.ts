@@ -20,7 +20,8 @@ const git = (
   options: { env?: NodeJS.ProcessEnv; ok?: readonly number[] } = {},
 ): string | undefined => {
   const { env, ok = [0] } = options;
-  const result = spawnSync("git", args, {
+  const gitArgs = ["-c", "diff.mnemonicPrefix=false", "-c", "diff.noprefix=false", ...args];
+  const result = spawnSync("git", gitArgs, {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

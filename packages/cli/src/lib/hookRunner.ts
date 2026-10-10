@@ -33,9 +33,9 @@ export const runHook = async (
       process.exit(0);
     }
   };
-  const deadline = setTimeout(() => {
+  setTimeout(() => {
     debug(`${name}: gave up after ${budgetMs}ms`);
-    finish({ kind: "silent" });
+    process.exit(0);
   }, budgetMs);
   try {
     const text = await readStdin();
@@ -49,7 +49,5 @@ export const runHook = async (
   } catch (error) {
     debug(`${name}: ${error instanceof Error ? error.message : String(error)}`);
     finish({ kind: "silent" });
-  } finally {
-    clearTimeout(deadline);
   }
 };

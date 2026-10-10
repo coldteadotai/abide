@@ -52,6 +52,27 @@ describe("rubricSchema", () => {
     expect(parsed.rules[0]?.status).toBe("active");
   });
 
+  it("accepts the optional context flag on a model check and rejects a non-boolean", () => {
+    const withContext = (context: unknown) => ({
+      ...base,
+      rules: [
+        {
+          id: "callers-ok",
+          text: "Keep callers working",
+          source: { path: "AGENTS.md" },
+          when: "turn",
+          check: {
+            type: "model",
+            context,
+            question: { type: "boolean", instructions: "Does the change break a caller?" },
+          },
+        },
+      ],
+    });
+    expect(rubricSchema.safeParse(withContext(true)).success).toBe(true);
+    expect(rubricSchema.safeParse(withContext("yes")).success).toBe(false);
+  });
+
   it("rejects a model rule without a phase", () => {
     const result = rubricSchema.safeParse({
       ...base,

@@ -21,6 +21,7 @@ describe("the working tree diff", () => {
   it("includes files git does not track yet", () => {
     const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
     execSync("git init -q .", { cwd: root });
+    execSync("git config diff.mnemonicPrefix true", { cwd: root });
     writeFileSync(path.join(root, "tracked.ts"), "export const a = 1;\n");
     execSync("git add . && git -c user.email=a@b -c user.name=a commit -q -m init", { cwd: root });
     writeFileSync(path.join(root, "tracked.ts"), "export const a = 2;\n");
@@ -28,6 +29,14 @@ describe("the working tree diff", () => {
     const files = splitDiff(workingTreeDiff(root, []));
     expect(files.map((f) => f.file).sort()).toEqual(["new.ts", "tracked.ts"]);
     expect(files.find((f) => f.file === "new.ts")?.text).toContain("+export const b = 1;");
+  });
+
+  it("keeps the a/ directory when Git omits diff prefixes", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abide-git-"));
+    execSync("git init -q . && git config diff.noprefix true", { cwd: root });
+    mkdirSync(path.join(root, "a"));
+    writeFileSync(path.join(root, "a", "new.ts"), "export const a = 1;\n");
+    expect(splitDiff(workingTreeDiff(root, [])).map((f) => f.file)).toEqual(["a/new.ts"]);
   });
 
   it("leaves secret files out of every patch it splits", () => {
