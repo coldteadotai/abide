@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
 import {
   checkStaleness,
@@ -96,6 +96,18 @@ describe("global sources", () => {
     } finally {
       delete process.env.ABIDE_HOME_DIR;
     }
+  });
+
+  it("reads the global CLAUDE.md from CLAUDE_CONFIG_DIR", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "abide-home-"));
+    mkdirSync(path.join(home, ".claude"));
+    writeFileSync(path.join(home, ".claude", "CLAUDE.md"), "- default dir\n");
+    mkdirSync(path.join(home, "claude-work"));
+    writeFileSync(path.join(home, "claude-work", "CLAUDE.md"), "- configured dir\n");
+    vi.stubEnv("ABIDE_HOME_DIR", home);
+    expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/.claude/CLAUDE.md"]);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "~/claude-work");
+    expect(discoverGlobalSources().map((c) => c.path)).toEqual(["~/claude-work/CLAUDE.md"]);
   });
 });
 

@@ -78,6 +78,10 @@ export const findRepoRoot = (start: string): string => {
 export const expandHome = (p: string): string =>
   p === "~" ? homeDir() : p.startsWith("~/") ? path.join(homeDir(), p.slice(2)) : p;
 
+/** Claude Code reads its settings, global CLAUDE.md and transcripts from here. */
+export const claudeConfigDir = (): string =>
+  path.resolve(expandHome(process.env.CLAUDE_CONFIG_DIR || path.join(homeDir(), ".claude")));
+
 export const piAgentDir = (): string =>
   path.resolve(expandHome(process.env.PI_CODING_AGENT_DIR || path.join(homeDir(), ".pi", "agent")));
 
