@@ -1,7 +1,14 @@
 import { readdirSync, existsSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { createSourceSha, type Rubric } from "@coldtea/abide-schema";
-import { claudeConfigDir, homeDir, piAgentDir, resolveSourcePath, toSourcePath } from "./paths.js";
+import {
+  claudeConfigDir,
+  homeDir,
+  isHomeDir,
+  piAgentDir,
+  resolveSourcePath,
+  toSourcePath,
+} from "./paths.js";
 import { readRegularFile } from "./regularFile.js";
 
 export type SourceCandidate = {
@@ -92,6 +99,7 @@ const walkNested = (root: string, dir: string, depth: number, out: SourceCandida
 
 export const discoverProjectSources = (root: string): SourceCandidate[] => {
   const found: SourceCandidate[] = [];
+  if (isHomeDir(root)) return found;
   for (const name of [...contextNames(root), ".cursorrules"]) {
     const file = path.join(root, name);
     if (existsSync(file)) {

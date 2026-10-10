@@ -7,6 +7,19 @@ import { readRegularText } from "./regularFile.js";
 
 export const homeDir = (): string => process.env.ABIDE_HOME_DIR ?? homedir();
 
+/** Symlinks followed and casing canonical, else the lexical path. */
+const identityPath = (p: string): string => {
+  const resolved = path.resolve(p);
+  try {
+    return realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+};
+
+/** Home is the global scope, never a project. */
+export const isHomeDir = (p: string): boolean => identityPath(p) === identityPath(homeDir());
+
 export const globalAbideDir = (): string => path.join(homeDir(), ".abide");
 export const globalRubricPath = (): string => path.join(globalAbideDir(), "global.json");
 export const sessionsDir = (): string => path.join(globalAbideDir(), "sessions");
@@ -38,14 +51,21 @@ const isDir = (p: string): boolean => {
 
 const ROOT_MARKERS = [".git", ".abide", "AGENTS.md", "CLAUDE.md"];
 
-/** The nearest ancestor that looks like a repository root, else the start directory. */
+/**
+ * The nearest ancestor that looks like a repository root, else the start directory.
+ * Markers at home do not count: `~/.abide` is the global dir, not a project.
+ */
 export const findRepoRoot = (start: string): string => {
   let dir = path.resolve(start);
   if (!isDir(dir)) dir = path.dirname(dir);
   let fallback: string | undefined;
   for (;;) {
     if (existsSync(path.join(dir, ".git"))) return dir;
-    if (fallback === undefined && ROOT_MARKERS.some((m) => existsSync(path.join(dir, m)))) {
+    if (
+      fallback === undefined &&
+      !isHomeDir(dir) &&
+      ROOT_MARKERS.some((m) => existsSync(path.join(dir, m)))
+    ) {
       fallback = dir;
     }
     const parent = path.dirname(dir);
