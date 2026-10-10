@@ -129,6 +129,7 @@ Pi runs with `--print --no-session`, using its configured model and authenticati
 - Each rule can carry a `scope` of globs, so an API route and a stylesheet get different questions.
 - Verdicts are banded. 0.8 and above: the agent is told to repair. 0.5 to 0.8: you see a note, the agent does not. Below 0.5: nothing.
 - A badly worded rule scores 0.4 on everything and never fires. `calibrate` finds those against twenty real hunks from your history and switches them off. `tune` has the agent rewrite them.
+- A rubric you write by hand can set `"manual": true`. Session start then never reports it stale or asks the agent to recompile it, and `abide compile` leaves it alone. List its instruction files in `sources` as usual, since `abide rubric validate` still checks every rule against them.
 
 ![abide report](docs/images/report.svg)
 

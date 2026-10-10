@@ -105,6 +105,15 @@ export const runCompile = async (argv: string[], tune: boolean): Promise<number>
     );
     return 1;
   }
+  if (!tune && plan.targets.length === 0 && plan.manual.length > 0) {
+    await showStatic(
+      Callout({
+        tone: "ok",
+        title: `The ${plan.manual.join(" and ")} rubric is maintained by hand ("manual": true). Remove that field to compile it.`,
+      }),
+    );
+    return 0;
+  }
   if (plan.noSources)
     throw new AbideError(
       "NO_INSTRUCTION_FILES",

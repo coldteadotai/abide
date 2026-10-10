@@ -7,11 +7,18 @@ import { placeCompileSkill } from "../lib/packageRoot.js";
 import { findRepoRoot, globalRubricPath, homeDir, rubricPath } from "../lib/paths.js";
 import { readRubric } from "../lib/rubricFile.js";
 import { pruneOldTurns } from "../lib/session.js";
-import { checkStaleness, discoverGlobalSources, discoverProjectSources } from "../lib/sources.js";
+import {
+  checkStaleness,
+  discoverGlobalSources,
+  discoverProjectSources,
+  needsCompile,
+} from "../lib/sources.js";
 
 export type CompilePlan = {
   targets: CompileTarget[];
   invalid: string[];
+  /** Rubrics left alone because they are marked manual. */
+  manual: CompileTarget["which"][];
   noSources: boolean;
 };
 
@@ -19,6 +26,7 @@ export type CompilePlan = {
 export const planCompile = (root: string): CompilePlan => {
   const targets: CompileTarget[] = [];
   const invalid: string[] = [];
+  const manual: CompileTarget["which"][] = [];
 
   const project = discoverProjectSources(root);
   const projectRead = readRubric(rubricPath(root));
@@ -27,9 +35,10 @@ export const planCompile = (root: string): CompilePlan => {
   }
   const projectRubric = projectRead.kind === "ok" ? projectRead.rubric : undefined;
   const projectStale = checkStaleness(projectRubric, project, root);
+  if (projectStale.status === "manual") manual.push("project");
   if (
     project.some((c) => c.required) &&
-    projectStale.status !== "fresh" &&
+    needsCompile(projectStale) &&
     projectRead.kind !== "invalid"
   ) {
     targets.push({
@@ -48,7 +57,8 @@ export const planCompile = (root: string): CompilePlan => {
   }
   const globalRubric = globalRead.kind === "ok" ? globalRead.rubric : undefined;
   const globalStale = checkStaleness(globalRubric, global, homeDir());
-  if (global.length > 0 && globalStale.status !== "fresh" && globalRead.kind !== "invalid") {
+  if (globalStale.status === "manual") manual.push("global");
+  if (global.length > 0 && needsCompile(globalStale) && globalRead.kind !== "invalid") {
     targets.push({
       which: "global",
       root: homeDir(),
@@ -58,7 +68,7 @@ export const planCompile = (root: string): CompilePlan => {
     });
   }
 
-  return { targets, invalid, noSources: project.length === 0 && global.length === 0 };
+  return { targets, invalid, manual, noSources: project.length === 0 && global.length === 0 };
 };
 
 export const handleSessionStart = async (raw: unknown): Promise<HookOutput> => {

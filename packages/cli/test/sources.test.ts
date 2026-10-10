@@ -9,6 +9,7 @@ import {
   discoverProjectSources,
 } from "../src/lib/sources.js";
 import { fillSourceShas, mergeRules } from "../src/lib/rubricFile.js";
+import { planCompile } from "../src/hooks/sessionStart.js";
 
 const repo = (): string => {
   const root = mkdtempSync(path.join(tmpdir(), "abide-"));
@@ -58,6 +59,28 @@ describe("source discovery", () => {
 
     const unhashed = checkStaleness({ ...rubric, sources: [{ path: "AGENTS.md" }] }, [], root);
     expect(unhashed).toMatchObject({ status: "stale", unhashed: ["AGENTS.md"] });
+  });
+
+  it("never reports a hand-maintained rubric stale, so session start does not ask to compile it", () => {
+    const root = repo();
+    const manual: Rubric = { ...rubricFor(root), manual: true, sources: [] };
+    expect(checkStaleness(manual, discoverProjectSources(root), root)).toEqual({
+      status: "manual",
+    });
+
+    vi.stubEnv("ABIDE_HOME_DIR", mkdtempSync(path.join(tmpdir(), "abide-home-")));
+    try {
+      mkdirSync(path.join(root, ".abide"));
+      writeFileSync(path.join(root, ".abide", "rubric.json"), JSON.stringify(manual));
+      expect(planCompile(root)).toMatchObject({ targets: [], manual: ["project"] });
+      writeFileSync(
+        path.join(root, ".abide", "rubric.json"),
+        JSON.stringify({ ...manual, manual: false }),
+      );
+      expect(planCompile(root).targets.map((t) => t.which)).toEqual(["project"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
