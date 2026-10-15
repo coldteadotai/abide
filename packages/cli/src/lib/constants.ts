@@ -10,8 +10,20 @@ export const TYPESAFE_BASE_URL_ENV = "TYPESAFE_AI_BASE_URL";
 /** List price observed 2026-09-17: $0.042 per million input tokens, output free. */
 export const JEV_USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 
-export const EDIT_CHECK_TIMEOUT_MS = 8_000;
-export const TURN_CHECK_TIMEOUT_MS = 15_000;
+/** Milliseconds from an environment variable: a positive integer, capped at `ceiling`; anything else gives `fallback`. */
+export const msFromEnv = (name: string, fallback: number, ceiling: number): number => {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? Math.min(value, ceiling) : fallback;
+};
+
+/**
+ * How long one model call may take. A slower self-hosted model can raise them. Each stays 5 s under its host hook's
+ * timeout (PostToolUse 20 s, Stop 30 s) so the host never kills the hook mid-check.
+ */
+export const EDIT_CHECK_TIMEOUT_ENV = "ABIDE_EDIT_CHECK_TIMEOUT_MS";
+export const TURN_CHECK_TIMEOUT_ENV = "ABIDE_TURN_CHECK_TIMEOUT_MS";
+export const EDIT_CHECK_TIMEOUT_MS = msFromEnv(EDIT_CHECK_TIMEOUT_ENV, 8_000, 15_000);
+export const TURN_CHECK_TIMEOUT_MS = msFromEnv(TURN_CHECK_TIMEOUT_ENV, 15_000, 25_000);
 export const STDIN_TIMEOUT_MS = 2_000;
 
 /** Largest diff sent as state. Beyond this the diff is cut and marked. */
