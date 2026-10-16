@@ -122,11 +122,12 @@ export const workingTreeDiff = (root: string, paths: readonly string[]): string 
     ? ["diff", "HEAD", "--no-color", "--unified=3"]
     : ["diff", "--cached", "--no-color", "--unified=3"];
   const tracked = git(root, [...base, "--", ...paths]) ?? "";
+  // -z, or git prints a name like `café.ts` quoted and escaped, and that is no path.
   const untracked = (
-    git(root, ["ls-files", "--others", "--exclude-standard", "--", ...paths]) ?? ""
+    git(root, ["ls-files", "-z", "--others", "--exclude-standard", "--", ...paths]) ?? ""
   )
-    .split("\n")
-    .filter((f) => f.trim() !== "");
+    .split("\0")
+    .filter((f) => f !== "");
   // --no-index exits 1 when the sides differ.
   const added = untracked
     .map((f) =>
